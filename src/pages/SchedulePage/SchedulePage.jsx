@@ -7,6 +7,7 @@ import { optimizeSchedule } from '../../utils/optimizer'
 import { exportScheduleToExcel } from '../../utils/exportSchedule'
 import { exportScheduleToPDF } from '../../utils/exportPDF'
 import Modal from '../../components/Modal'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import './SchedulePage.css'
 
 const BASE_DAY_HDR   = 52  // px — day header row base height
@@ -169,6 +170,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   const [dragOverSlot, setDragOverSlot]   = useState(null) // { day, roomId, slotIndex }
   const [contextMenu, setContextMenu]     = useState(null) // { cls, x, y }
   const [confirmCls, setConfirmCls]       = useState(null)
+  const [confirmClear, setConfirmClear]   = useState(false)
   const [zoom, setZoom]                   = useState(1.0)
 
   useEffect(() => {
@@ -395,21 +397,21 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                 </div>
               )}
             </div>
-            <button className="btn btn-ghost" onClick={() => exportScheduleToPDF(gridRef.current)} disabled={scheduledClasses.length === 0}>
+            <button className="btn btn-primary" onClick={() => exportScheduleToPDF(gridRef.current)} disabled={scheduledClasses.length === 0}>
               Export to PDF
             </button>
             <button
-              className="btn btn-ghost"
+              className="btn btn-primary"
               onClick={() => exportScheduleToExcel(visibleClasses.filter((c) => !hiddenDays.has(c.dayOfWeek)), teachers, rooms, students, visibleDays, visibleRooms)}
               disabled={scheduledClasses.length === 0}
             >
               Export to Excel
             </button>
-            <button className="btn btn-ghost" onClick={handleClearSchedule} disabled={scheduledClasses.length === 0}>
+            <button className="btn btn-primary" onClick={() => setConfirmClear(true)} disabled={scheduledClasses.length === 0}>
               Clear Schedule
             </button>
             <button className="btn btn-primary" onClick={handleOptimize} disabled={classes.length === 0}>
-              Auto-Schedule
+              Auto Schedule
             </button>
           </div>
         )}
@@ -584,6 +586,16 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
             Unschedule class
           </button>
         </div>
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Confirm Clear"
+          message="Clear the entire schedule? All classes will be unscheduled. This cannot be undone."
+          confirmLabel="Clear"
+          onConfirm={() => { handleClearSchedule(); setConfirmClear(false) }}
+          onCancel={() => setConfirmClear(false)}
+        />
       )}
 
       {confirmCls && (
