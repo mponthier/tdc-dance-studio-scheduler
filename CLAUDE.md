@@ -123,9 +123,11 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 **Teacher & room filters:** Multi-select dropdown panels in the page header. Each filter is a button that opens a checkbox list. The button label shows "All teachers/rooms" when nothing is selected, the item name when exactly one is selected, or "N teachers/rooms" for multiple. A "Clear selection" link appears inside the dropdown when any items are chosen. Clicking outside closes the dropdown. Room filter also controls which room sub-columns are rendered (`visibleRooms`). State: `filterTeacherIds` and `filterRoomIds` are `Set` objects (not strings). Filter logic: `filterTeacherIds.size === 0 || filterTeacherIds.has(c.teacherId)`.
 
-**Auto-Schedule button:** Calls `optimizeSchedule` (unscheduled classes only), then `classCrud.updateMany(updated)`. Shows inline result message with scheduled count and names of any that could not be placed.
+**Auto Schedule button:** Calls `optimizeSchedule` (unscheduled classes only), then `classCrud.updateMany(updated)`. Shows inline result message with scheduled count and names of any that could not be placed.
 
-**Clear Schedule button:** Resets all classes to `dayOfWeek: '', startTime: '', roomId: '', teacherId: ''`.
+**Clear Schedule button:** Opens a `ConfirmDialog` (title "Confirm Clear", confirm label "Clear") before resetting all classes to `dayOfWeek: '', startTime: '', roomId: '', teacherId: ''`.
+
+**Export to PDF / Export to Excel / Clear Schedule / Auto Schedule buttons:** All styled as `btn btn-primary` (maroon). Export buttons are disabled when no classes are scheduled.
 
 **Drag & drop rescheduling:** Class blocks are `draggable`. Grid slot divs are drop targets — each carries `day`, `roomId`, and `slotIndex`. On drop, `findAvailableTeacher(cls, day, slotIndex, teachers, classes)` is called: if the class already has a teacher it verifies they are free; if no teacher is set it finds the first eligible (by genre/specialty) free teacher. The drop is blocked if no valid teacher exists. `slotIndexToTime(slotIndex)` converts grid row back to `"HH:MM"`. Drops onto unavailable slots (`.slot-unavailable`) are also silently blocked.
 
@@ -135,7 +137,7 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 **Class detail panel:** Left-clicking a class block opens `ClassDetailPanel` — a read-only overlay (`.detail-overlay`) showing the class name, genre, day, time range, duration, teacher, room, and enrolled students list. Clicking outside the panel or the × button closes it.
 
-**Optimize result message:** Shown below the grid after Auto-Schedule. Persists until dismissed with a Clear button.
+**Optimize result message:** Shown below the grid after Auto Schedule. Persists until dismissed with a Clear button.
 
 `ClassBlock` colors blocks using the teacher's `color` field (lightened) with a solid left border in the full color.
 
@@ -177,7 +179,7 @@ Unscheduled classes display "Unscheduled" instead of a time string. Always guard
 ### Shared UI components
 
 - **`src/components/Modal.jsx`** — Generic modal wrapper with `title`, `onClose`, and optional `size` prop.
-- **`src/components/ConfirmDialog.jsx`** — Inline confirmation prompt with `message`, `onConfirm`, and `onCancel`. Used for destructive actions (deleting rooms, unscheduling classes). Renders without a full modal overlay.
+- **`src/components/ConfirmDialog.jsx`** — Confirmation prompt with `message`, `onConfirm`, `onCancel`, `title` (default `'Confirm Delete'`), and `confirmLabel` (default `'Delete'`). Used for destructive actions (deleting rooms, unscheduling classes, clearing the schedule). Pass custom `title` and `confirmLabel` to override the defaults.
 
 ### Class detail panel (`src/pages/SchedulePage/ClassDetailPanel.jsx`)
 
