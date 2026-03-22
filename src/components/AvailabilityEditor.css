@@ -40,7 +40,7 @@
 .avail-grid {
   display: grid;
   grid-template-columns: 44px repeat(7, minmax(60px, 1fr));
-  grid-template-rows: 28px repeat(14, 16px);
+  grid-template-rows: 28px repeat(12, 16px);
   min-width: 500px;
 }
 

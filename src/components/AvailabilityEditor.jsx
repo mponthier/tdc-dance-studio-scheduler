@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { DAYS, GRID_END_HOUR } from '../utils/timeHelpers'
+import { DAYS, GRID_END_HOUR, GRID_END_MIN } from '../utils/timeHelpers'
 import './AvailabilityEditor.css'
 
-const GRID_START_HOUR = 15  // 3:00 pm
+const GRID_START_HOUR = 15  // 3:30 pm
+const GRID_START_MIN  = 30
 const SLOT_MINUTES = 30
-const TOTAL_SLOTS = ((GRID_END_HOUR - GRID_START_HOUR) * 60) / SLOT_MINUTES // 14
+const TOTAL_SLOTS = ((GRID_END_HOUR * 60 + GRID_END_MIN) - (GRID_START_HOUR * 60 + GRID_START_MIN)) / SLOT_MINUTES // 12
 
 // ── Data helpers ──────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ function slotsToSet(availability) {
   for (const slot of availability || []) {
     const start = toMins(slot.startTime)
     const end = toMins(slot.endTime)
-    const gridStart = GRID_START_HOUR * 60
+    const gridStart = GRID_START_HOUR * 60 + GRID_START_MIN
     for (let m = start; m < end; m += SLOT_MINUTES) {
       const slotIndex = (m - gridStart) / SLOT_MINUTES
       if (slotIndex >= 0 && slotIndex < TOTAL_SLOTS) {
@@ -53,7 +54,7 @@ function setToSlots(cellSet) {
   }
 
   const slots = []
-  const gridStartMins = GRID_START_HOUR * 60
+  const gridStartMins = GRID_START_HOUR * 60 + GRID_START_MIN
 
   for (const day of DAYS) {
     const indices = byDay[day]
@@ -166,14 +167,14 @@ export default function AvailabilityEditor({ value = [], onChange, color = '#6c5
     onChange(setToSlots(next))
   }
 
-  // Build time label for a slot index (only show on the hour = every 2nd slot)
+  // Build time label for a slot index (every slot = 30 min granularity)
   function getTimeLabel(slotIndex) {
-    if (slotIndex % 2 !== 0) return ''
-    const totalMins = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
+    const totalMins = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
     const h = Math.floor(totalMins / 60)
+    const m = totalMins % 60
     const suffix = h >= 12 ? 'p' : 'a'
     const hour = h % 12 || 12
-    return `${hour}${suffix}`
+    return `${hour}:${String(m).padStart(2, '0')}${suffix}`
   }
 
   return (

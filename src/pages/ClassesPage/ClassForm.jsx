@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { DAYS } from '../../utils/timeHelpers'
 
-const STYLES = ['Ballet', 'Contemporary', 'Hip Hop', 'Jazz', 'Lyrical', 'Musical Theater', 'Pointe', 'Tap', 'Drill', 'All-Star']
+const STYLES = ['All-Star', 'Ballet', 'Contemporary', 'Drill', 'Hip Hop', 'Jazz', 'Lyrical', 'Musical Theater', 'Pointe', 'Tap']
+const SKILL_LEVELS = ['Beg/Int (6-10)', 'Beg/Int (10+)', 'Int/Adv (6-10)', 'Int/Adv (10+)']
 import { detectConflicts } from '../../utils/conflicts'
 import { detectAvailabilityWarnings } from '../../utils/availability'
 
 const DEFAULTS = {
   name: '',
   style: '',
+  skillLevel: '',
   teacherId: '',
   roomId: '',
   dayOfWeek: '',
@@ -101,6 +103,14 @@ export default function ClassForm({ initial, teachers, rooms, allClasses, onSave
               {STYLES.map((s) => <option key={s}>{s}</option>)}
             </select>
           </div>
+        </div>
+
+        <div className="form-group">
+          <label>Skill Level</label>
+          <select value={form.skillLevel} onChange={(e) => set('skillLevel', e.target.value)}>
+            <option value="">— Select skill level —</option>
+            {SKILL_LEVELS.map((s) => <option key={s}>{s}</option>)}
+          </select>
         </div>
 
         <div className="form-row">

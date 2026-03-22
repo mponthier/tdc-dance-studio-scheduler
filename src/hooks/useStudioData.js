@@ -101,5 +101,7 @@ export function useStudioData() {
     },
   }
 
-  return { students, teachers, rooms, classes, studentCrud, teacherCrud, roomCrud, classCrud }
+  const sortedRooms = [...rooms].sort((a, b) => a.name.localeCompare(b.name))
+
+  return { students, teachers, rooms: sortedRooms, classes, studentCrud, teacherCrud, roomCrud, classCrud }
 }

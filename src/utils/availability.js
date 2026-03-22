@@ -9,8 +9,8 @@ function toMins(timeStr) {
  */
 export function isWithinAvailability(availability, dayOfWeek, startTime, durationMinutes) {
   if (!availability || availability.length === 0) return true
-  const classStart = toMins(startTime)
-  const classEnd = classStart + durationMinutes
+  const classStart = toMins(startTime) + 1
+  const classEnd = toMins(startTime) + durationMinutes - 1
   return availability.some(
     (slot) =>
       slot.dayOfWeek === dayOfWeek &&

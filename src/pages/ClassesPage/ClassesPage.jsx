@@ -7,6 +7,13 @@ import { findAllConflictingIds } from '../../utils/conflicts'
 import { formatTime, addMinutes, DAYS } from '../../utils/timeHelpers'
 
 const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d, i]))
+const SKILL_BADGE = {
+  'Beg/Int (6-10)': 'badge-skill-1',
+  'Beg/Int (10+)':  'badge-skill-2',
+  'Int/Adv (6-10)': 'badge-skill-3',
+  'Int/Adv (10+)':  'badge-skill-4',
+}
+const SKILL_LEVELS = Object.keys(SKILL_BADGE)
 const UNASSIGNED = '__unassigned__'
 
 function sortClasses(classes, key, dir, teachers, rooms) {
@@ -24,6 +31,8 @@ function sortClasses(classes, key, dir, teachers, rooms) {
     } else if (key === 'room') {
       av = (rooms.find((r) => r.id === a.roomId)?.name || '').toLowerCase()
       bv = (rooms.find((r) => r.id === b.roomId)?.name || '').toLowerCase()
+    } else if (key === 'skillLevel') {
+      av = (a.skillLevel || '').toLowerCase(); bv = (b.skillLevel || '').toLowerCase()
     } else if (key === 'students') {
       av = a.enrolledStudentIds.length; bv = b.enrolledStudentIds.length
     }
@@ -38,14 +47,16 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
   const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
+  const [filterSkillLevels, setFilterSkillLevels] = useState(new Set())
   const [dropOpen, setDropOpen] = useState(false)
+  const [skillDropOpen, setSkillDropOpen] = useState(false)
 
   useEffect(() => {
-    if (!dropOpen) return
-    function close() { setDropOpen(false) }
+    if (!dropOpen && !skillDropOpen) return
+    function close() { setDropOpen(false); setSkillDropOpen(false) }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
-  }, [dropOpen])
+  }, [dropOpen, skillDropOpen])
 
   const conflictIds = findAllConflictingIds(classes)
 
@@ -79,12 +90,14 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
     )
   }
 
-  const filtered = filterTeacherIds.size > 0
-    ? classes.filter((c) => {
-        if (!c.teacherId && filterTeacherIds.has(UNASSIGNED)) return true
-        return filterTeacherIds.has(c.teacherId)
-      })
-    : classes
+  const filtered = classes.filter((c) => {
+    if (filterTeacherIds.size > 0) {
+      if (!c.teacherId && filterTeacherIds.has(UNASSIGNED)) { /* pass */ }
+      else if (!filterTeacherIds.has(c.teacherId)) return false
+    }
+    if (filterSkillLevels.size > 0 && !filterSkillLevels.has(c.skillLevel || '')) return false
+    return true
+  })
   const sorted = sortClasses(filtered, sortKey, sortDir, teachers, rooms)
 
   return (
@@ -95,8 +108,45 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
           <div className="filter-dropdown-wrap">
             <button
               type="button"
+              className={`schedule-filter-btn${filterSkillLevels.size > 0 ? ' active' : ''}`}
+              onClick={() => { setSkillDropOpen((o) => !o); setDropOpen(false) }}
+            >
+              {filterSkillLevels.size === 0
+                ? 'All skill levels'
+                : filterSkillLevels.size === 1
+                  ? [...filterSkillLevels][0]
+                  : `${filterSkillLevels.size} skill levels`}
+              <span className="filter-caret">▾</span>
+            </button>
+            {skillDropOpen && (
+              <div className="filter-dropdown" onMouseDown={(e) => e.stopPropagation()}>
+                {filterSkillLevels.size > 0 && (
+                  <button type="button" className="filter-dropdown-clear" onClick={() => setFilterSkillLevels(new Set())}>
+                    Clear selection
+                  </button>
+                )}
+                {SKILL_LEVELS.map((s) => (
+                  <label key={s} className="filter-dropdown-item">
+                    <input
+                      type="checkbox"
+                      checked={filterSkillLevels.has(s)}
+                      onChange={(e) => setFilterSkillLevels((prev) => {
+                        const next = new Set(prev)
+                        e.target.checked ? next.add(s) : next.delete(s)
+                        return next
+                      })}
+                    />
+                    {s}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="filter-dropdown-wrap">
+            <button
+              type="button"
               className={`schedule-filter-btn${filterTeacherIds.size > 0 ? ' active' : ''}`}
-              onClick={() => setDropOpen((o) => !o)}
+              onClick={() => { setDropOpen((o) => !o); setSkillDropOpen(false) }}
             >
               {filterTeacherIds.size === 0
                 ? 'All teachers'
@@ -164,8 +214,9 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
             <thead>
               <tr>
                 <SortTh col="name">Class</SortTh>
-                <SortTh col="schedule">Day & Time</SortTh>
+                <SortTh col="skillLevel">Skill Level</SortTh>
                 <SortTh col="teacher">Teacher</SortTh>
+                <SortTh col="schedule">Day & Time</SortTh>
                 <SortTh col="room">Room</SortTh>
                 <SortTh col="students">Students</SortTh>
                 <th></th>
@@ -188,6 +239,12 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
                       {hasConflict && <span className="badge badge-conflict" style={{ marginTop: 4 }}>Conflict</span>}
                     </td>
                     <td>
+                      {c.skillLevel
+                        ? <span className={`badge ${SKILL_BADGE[c.skillLevel]}`}>{c.skillLevel}</span>
+                        : <em style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>—</em>}
+                    </td>
+                    <td>{getTeacher(c.teacherId)}</td>
+                    <td>
                       {c.dayOfWeek && endTime ? (
                         <>
                           {c.dayOfWeek}<br />
@@ -199,7 +256,6 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
                         <em style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Unscheduled</em>
                       )}
                     </td>
-                    <td>{getTeacher(c.teacherId)}</td>
                     <td>{getRoom(c.roomId)}</td>
                     <td>
                       <span style={{ color: atCapacity ? 'var(--color-danger)' : 'inherit', fontWeight: atCapacity ? 600 : 400 }}>

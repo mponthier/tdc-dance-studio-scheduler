@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import AvailabilityEditor from '../../components/AvailabilityEditor'
 
-const SPECIALTIES = ['Ballet', 'Contemporary', 'Hip Hop', 'Jazz', 'Lyrical', 'Musical Theater', 'Pointe', 'Tap', 'Drill', 'All-Star']
+const SPECIALTIES = ['All-Star', 'Ballet', 'Contemporary', 'Drill', 'Hip Hop', 'Jazz', 'Lyrical', 'Musical Theater', 'Pointe', 'Tap']
 
 const PRESET_COLORS = [
   '#6c5ce7', '#0984e3', '#00b894', '#e17055', '#fd79a8',

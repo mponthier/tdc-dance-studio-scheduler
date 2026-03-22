@@ -10,6 +10,14 @@ const STYLE_COLORS = {
   Swing:        { bg: '#d5f7f7', text: '#1a7a7a' },
 }
 
+// Colors keyed by skill level
+const SKILL_COLORS = {
+  'Beg/Int (6-10)': '#e67e22',
+  'Beg/Int (10+)':  '#2980b9',
+  'Int/Adv (6-10)': '#27ae60',
+  'Int/Adv (10+)':  '#8e44ad',
+}
+
 /** Derive a readable text color (dark or white) from a hex background. */
 function getTextColor(hex) {
   if (!hex || hex.length < 7) return '#2d3436'
@@ -29,18 +37,20 @@ function lightenHex(hex, ratio = 0.72) {
   return `rgb(${r},${g},${b})`
 }
 
-function getColors(teacher, style) {
-  if (teacher?.color) {
-    return {
-      bg: lightenHex(teacher.color, 0.72),
-      text: teacher.color,
-    }
+function getColors(teacher, style, skillLevel, colorMode) {
+  if (colorMode === 'skillLevel') {
+    const hex = SKILL_COLORS[skillLevel]
+    if (hex) return { bg: lightenHex(hex, 0.72), border: hex }
+    return { bg: '#e2e4f0', border: '#888' }
   }
-  return STYLE_COLORS[style] || { bg: '#e2e4f0', text: '#4a4f6a' }
+  if (teacher?.color) {
+    return { bg: lightenHex(teacher.color, 0.72), border: teacher.color }
+  }
+  return STYLE_COLORS[style] || { bg: '#e2e4f0', border: '#4a4f6a' }
 }
 
-export default function ClassBlock({ cls, teacher, room, hasConflict, style: gridStyle, onClick, onContextMenu, onDragStart, onDragEnd }) {
-  const colors = getColors(teacher, cls.style)
+export default function ClassBlock({ cls, teacher, room, hasConflict, colorMode = 'teacher', style: gridStyle, onClick, onContextMenu, onDragStart, onDragEnd }) {
+  const colors = getColors(teacher, cls.style, cls.skillLevel, colorMode)
 
   function handleDragStart(e) {
     e.dataTransfer.effectAllowed = 'move'
@@ -55,8 +65,8 @@ export default function ClassBlock({ cls, teacher, room, hasConflict, style: gri
       style={{
         ...gridStyle,
         background: colors.bg,
-        color: colors.text,
-        borderLeft: hasConflict ? `3px solid var(--color-danger)` : `3px solid ${teacher?.color || 'transparent'}`,
+        color: colors.text || colors.border,
+        borderLeft: hasConflict ? `3px solid var(--color-danger)` : `3px solid ${colors.border}`,
         pointerEvents: 'auto',
         cursor: 'grab',
       }}
@@ -64,11 +74,11 @@ export default function ClassBlock({ cls, teacher, room, hasConflict, style: gri
       onContextMenu={(e) => { e.preventDefault(); onContextMenu?.(e, cls) }}
       onDragStart={handleDragStart}
       onDragEnd={() => onDragEnd?.()}
-      title={`${cls.name}\n${teacher?.name || ''} · ${room?.name || ''}`}
+      title={[cls.name, teacher?.name, cls.skillLevel].filter(Boolean).join('\n')}
     >
       <div className="class-block-name">{cls.name}</div>
       {teacher && <div className="class-block-meta">{teacher.name}</div>}
-      {room && <div className="class-block-meta">{room.name}</div>}
+      {cls.skillLevel && <div className="class-block-meta">{cls.skillLevel}</div>}
     </div>
   )
 }

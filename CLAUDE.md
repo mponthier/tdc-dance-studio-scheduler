@@ -51,9 +51,9 @@ Then refresh the page.
 | `src/services/storage.js` | Pure localStorage I/O. Four services (`studentsService`, `teachersService`, `roomsService`, `classesService`), each with `getAll()` and `save()`. Also contains `seedDemoData()` which runs once on first load. |
 | `src/hooks/useStudioData.js` | Owns all React state. Exposes `students`, `teachers`, `rooms`, `classes` arrays plus `studentCrud`, `teacherCrud`, `roomCrud`, `classCrud` objects. Each crud object has `add`, `update`, `remove`; `classCrud` also has `enroll`, `unenroll`, and `updateMany`. `teacherCrud.update` and `roomCrud.update` extend the base behavior: after saving, they call `unscheduleInvalidClasses()` to automatically unschedule any classes that no longer fall within the updated availability. |
 | `src/utils/conflicts.js` | `detectConflicts(candidate, allClasses)` — used in `ClassForm` for real-time warnings. `findAllConflictingIds(allClasses)` — O(n²) scan used for conflict badges on the Classes list and `ClassBlock` tinting. |
-| `src/utils/availability.js` | `detectAvailabilityWarnings(candidate, teacher, room)` — checks teacher/room availability slots against a class's day/time. Called alongside `detectConflicts` in `ClassForm`. |
-| `src/utils/timeHelpers.js` | Grid positioning math: `timeToRow`, `durationToRowSpan`. Constants: `DAYS`, `GRID_START_HOUR` (15), `GRID_END_HOUR` (22), `SLOT_MINUTES` (15), `TOTAL_SLOTS` (28). |
-| `src/utils/optimizer.js` | `optimizeSchedule(classes, teachers, rooms) → updatedClasses[]` — greedy scheduler that assigns day/time/room/teacher to unscheduled classes. Sorts by duration descending. If a class already has a `teacherId` whose specialty doesn't match the class genre, the class is skipped entirely. If a class already has a `roomId`, that room is tried first. If no teacher is assigned, finds the first eligible teacher (by genre/specialty) who is available and conflict-free at the chosen slot. Returns only newly scheduled classes. |
+| `src/utils/availability.js` | `isWithinAvailability(availability, dayOfWeek, startTime, durationMinutes)` — returns true if the class fits inside an availability window. Applies a **1-minute inset**: checks `classStart+1` through `classEnd-1`, so a class can start/end exactly at an availability boundary. `detectAvailabilityWarnings(candidate, teacher, room)` — called alongside `detectConflicts` in `ClassForm`. |
+| `src/utils/timeHelpers.js` | Grid positioning math: `timeToRow`, `durationToRowSpan`. Constants: `DAYS`, `GRID_START_HOUR` (15), `GRID_START_MIN` (30), `GRID_END_HOUR` (21), `GRID_END_MIN` (30), `SLOT_MINUTES` (15), `TOTAL_SLOTS` (24). |
+| `src/utils/optimizer.js` | `optimizeSchedule(classes, teachers, rooms) → updatedClasses[]` — greedy scheduler that assigns day/time/room/teacher to unscheduled classes. Sorts by duration descending. If a class already has a `teacherId` whose specialty doesn't match the class genre, the class is skipped entirely. If a class already has a `roomId`, that room is tried first. If no teacher is assigned, finds the first eligible teacher (by genre/specialty) who is available and conflict-free at the chosen slot. Two classes with the same non-empty `skillLevel` are never placed in overlapping time slots. Returns only newly scheduled classes. |
 | `src/utils/exportSchedule.js` | `exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms)` — ExcelJS-based export that mirrors the room-subdivided weekly grid. |
 | `src/utils/exportPDF.js` | `exportScheduleToPDF(gridElement)` — html2canvas + jsPDF export. Captures the inner `.weekly-grid` element (not the overflow wrapper) to avoid clipping. Uses a custom page size wide enough to fit the full grid aspect ratio. |
 
@@ -67,10 +67,10 @@ Then refresh the page.
 { id, name, capacity: number, availability: [{dayOfWeek, startTime, endTime}] }
 
 // dss_students
-{ id, name, age: number, skillLevel: "Beginner/Intermediate (6-10)" | "Beginner/Intermediate (10+)" | "Intermediate/Advanced (6-10)" | "Intermediate/Advanced (10+)" }
+{ id, name, age: number, skillLevel: "Beg/Int (6-10)" | "Beg/Int (10+)" | "Int/Adv (6-10)" | "Int/Adv (10+)" }
 
 // dss_classes
-{ id, name, style, teacherId, roomId, dayOfWeek, startTime: "HH:MM", durationMinutes: number, enrolledStudentIds: [] }
+{ id, name, style, skillLevel: string, teacherId, roomId, dayOfWeek, startTime: "HH:MM", durationMinutes: number, enrolledStudentIds: [] }
 ```
 
 `availability` empty array = no restriction (always available).
@@ -81,9 +81,9 @@ Then refresh the page.
 
 - **Teachers (6):** Suzan Ponthier (`#0984e3` blue), Mark Ponthier (`#6c5ce7` purple), Virginia Nuckolls (`#00b894` green), Julia Ponthier (`#e17055` coral), Jake Ponthier (`#d63031` red), Doc Nuckolls (`#fd79a8` pink) — specialties span all 10 genres (see below)
 - **Rooms:** Tots, Pink, Green, Blue — capacity 25 each
-- **Availability (teachers & rooms):** Mon–Fri, 3:30pm–10:00pm
-- **Classes:** 30 classes across all 10 genres, seeded with **no teacher, no day/time, no room** assigned
-- **Students:** one per skill level — Emma Johnson (Beginner/Intermediate 10+), Liam Park (Intermediate/Advanced 10+), Sofia Rivera (Intermediate/Advanced 10+), Noah Chen (Beginner/Intermediate 6-10), Olivia Williams (Intermediate/Advanced 10+), Ava Martinez (Intermediate/Advanced 6-10)
+- **Availability (teachers & rooms):** Mon–Fri, 3:30pm–9:30pm
+- **Classes:** 30 classes across all 10 genres, seeded with **no teacher, no day/time, no room** assigned. Each class has a `skillLevel` pre-assigned (`BI6` = Beg/Int (6-10), `BI10` = Beg/Int (10+), `IA6` = Int/Adv (6-10), `IA10` = Int/Adv (10+)).
+- **Students:** one per skill level — Emma Johnson (Beg/Int 10+), Liam Park (Int/Adv 10+), Sofia Rivera (Int/Adv 10+), Noah Chen (Beg/Int 6-10), Olivia Williams (Int/Adv 10+), Ava Martinez (Int/Adv 6-10)
 - **Phone format:** `xxx-xxx-xxxx`
 
 ### Teacher specialties & class genres
@@ -95,21 +95,25 @@ The UI label is **Genre** everywhere (not "Specialty" or "Style"). Teacher `spec
 
 ### Weekly grid (Schedule page)
 
-CSS Grid: time label column + variable data columns (per-day room counts), 2 header rows (day headers row, room sub-headers row) + 28 fifteen-minute slot rows (3pm–10pm). The corner cell spans both header rows. `TIME_ROW_OFFSET = 3` so time slot rows start at CSS grid row 3.
+CSS Grid: time label column + variable data columns (per-day room counts), 2 header rows (day headers row, room sub-headers row) + 24 fifteen-minute slot rows (3:30pm–9:30pm). The corner cell spans both header rows. `TIME_ROW_OFFSET = 3` so time slot rows start at CSS grid row 3.
 
-**Time range & granularity:** Grid runs 3:00pm–10:00pm (`GRID_START_HOUR = 15`, `GRID_END_HOUR = 22`). Slots are 15 minutes each (`SLOT_MINUTES = 15`), giving 28 total slots. Classes snap to 15-minute boundaries.
+**Time range & granularity:** Grid runs 3:30pm–9:30pm (`GRID_START_HOUR = 15`, `GRID_START_MIN = 30`, `GRID_END_HOUR = 21`, `GRID_END_MIN = 30`). Slots are 15 minutes each (`SLOT_MINUTES = 15`), giving 24 total slots. Classes snap to 15-minute boundaries.
 
 **Per-day room columns:** Each day shows only the rooms that have availability on that day (`isRoomAvailableOnDay` helper). Days with no available rooms render no columns. Column layout uses cumulative offsets (`dayColStart` map) rather than a fixed `numRooms * dayIdx` formula. `getCol(day, ri)` returns the CSS grid column for a given day name and room index within that day's available rooms.
 
-**Unavailable slots:** Slots outside a room's availability window are rendered with a solid light grey background (`#e0e0e0`, CSS class `.slot-unavailable`). Drag-over and drop are blocked on these slots via `isRoomSlotAvailable(room, day, slotIndex)`.
+**Unavailable slots:** Slots outside a room's availability window are rendered in bright red (`#ff4444`, CSS class `.slot-unavailable`) with an "N/A" label. `isRoomSlotAvailable(room, day, slotIndex)` uses strict `>` for the end-time check (slot at exactly `endTime` is red). Drag-over/drop validation uses `isWithinAvailability` only — not `isRoomSlotAvailable` — so the full class duration is checked, not just the start slot.
 
 **Lane-based overlap layout:** `RoomColumn` component (`position: relative`, `pointer-events: none`) spans all time rows for its (day, room) column. Class blocks inside are `position: absolute` with top/height computed from `slotHeight`. `assignLanes()` groups overlapping classes into side-by-side lanes. Class blocks have `pointer-events: auto`.
 
-**Day visual distinction:** Alternating day bands — even days white, odd days warm blush (`#fdf6f6`). Thick left border (`border-left: 2px`) on the first room column of each day. Day headers: even = `#500000` (deep maroon), odd = `#732f2f` (lighter maroon), both with white text. Room sub-headers: even = `#f9f0f0`, odd = `#ede8e8`. These colors match the Excel export exactly.
+**Day visual distinction:** All slot cells are white (no alternating tint between days). Thick solid left border (`border-left: 2px solid`) on the first room column of each day. Day headers: even = `#500000` (deep maroon), odd = `#732f2f` (lighter maroon), both with white text. Room sub-headers: even = `#f9f0f0`, odd = `#ede8e8`. These colors match the Excel export exactly.
+
+**Hour delineation:** Slots at hour boundaries (4:00pm, 5:00pm, …) receive `.hour-boundary` class, styled with `border-top: 1px dashed #b0a0a0` across both slot cells and the time label column. Time labels are shown every 30 minutes (every 2 slots) in consistent `H:MMpm` format (e.g. `4:00pm`, `4:30pm`). Excel export mirrors this with dashed `#B0A0A0` top borders at hour rows and solid medium borders for day delineation.
 
 **Day visibility toggles:** Row of day chips above the grid. Only days where at least one room has availability are shown (`daysWithRooms = DAYS.filter(...)`). Active days = filled maroon buttons; clicking a day hides its columns. Managed via `hiddenDays` Set in state. `visibleDays` is derived from `daysWithRooms` (not all `DAYS`) so the grid and toggles stay consistent.
 
-**Zoom controls:** `+` / `−` / `↺` buttons shown to the right of the day toggles. Zoom range 60%–200%, default 100%. All grid dimensions (slot height, header heights, time label column width, room column min-width) are derived from base constants multiplied by the zoom factor. `slotHeight` is passed as a prop to `RoomColumn` so class block positioning scales correctly.
+**Zoom controls:** `+` / `−` / `↺` buttons in the `.toolbar-right` group. Zoom range 60%–200%, default 100%. All grid dimensions (slot height, header heights, time label column width, room column min-width) are derived from base constants multiplied by the zoom factor. `slotHeight` is passed as a prop to `RoomColumn` so class block positioning scales correctly.
+
+**Color mode toggle:** Segmented control (Teacher / Skill Level) in `.toolbar-right` alongside zoom. Controls `colorMode` state (`'teacher'` | `'skillLevel'`), passed as a prop through `RoomColumn` → `ClassBlock`. In `ClassBlock`, `SKILL_COLORS` maps each skill level to a hex accent color (`Beg/Int (6-10)` → `#e67e22`, `Beg/Int (10+)` → `#2980b9`, `Int/Adv (6-10)` → `#27ae60`, `Int/Adv (10+)` → `#8e44ad`); the accent is lightened 72% for the block background and used full-strength for the left border.
 
 Base constants in `SchedulePage.jsx`:
 ```js
@@ -121,7 +125,7 @@ const BASE_COL_MIN   = 90   // room column minimum width (px)
 const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header rows + 1-based)
 ```
 
-**Teacher & room filters:** Multi-select dropdown panels in the page header. Each filter is a button that opens a checkbox list. The button label shows "All teachers/rooms" when nothing is selected, the item name when exactly one is selected, or "N teachers/rooms" for multiple. A "Clear selection" link appears inside the dropdown when any items are chosen. Clicking outside closes the dropdown. Room filter also controls which room sub-columns are rendered (`visibleRooms`). State: `filterTeacherIds` and `filterRoomIds` are `Set` objects (not strings). Filter logic: `filterTeacherIds.size === 0 || filterTeacherIds.has(c.teacherId)`.
+**Teacher, room & skill level filters:** Multi-select dropdown panels in the page header. Each filter is a button that opens a checkbox list. The button label shows "All …" when nothing is selected, the item name when exactly one is selected, or "N …" for multiple. A "Clear selection" link appears inside the dropdown when any items are chosen. Clicking outside closes any open dropdown. Room filter also controls which room sub-columns are rendered (`visibleRooms`). State: `filterTeacherIds`, `filterRoomIds`, and `filterSkillLevels` are `Set` objects. Skill level filter matches on `c.skillLevel || ''`.
 
 **Auto Schedule button:** Calls `optimizeSchedule` (unscheduled classes only), then `classCrud.updateMany(updated)`. Shows inline result message with scheduled count and names of any that could not be placed.
 
@@ -129,7 +133,13 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 **Export to PDF / Export to Excel / Clear Schedule / Auto Schedule buttons:** All styled as `btn btn-primary` (maroon). Export buttons are disabled when no classes are scheduled.
 
-**Drag & drop rescheduling:** Class blocks are `draggable`. Grid slot divs are drop targets — each carries `day`, `roomId`, and `slotIndex`. On drop, `findAvailableTeacher(cls, day, slotIndex, teachers, classes)` is called: if the class already has a teacher it verifies they are free; if no teacher is set it finds the first eligible (by genre/specialty) free teacher. The drop is blocked if no valid teacher exists. `slotIndexToTime(slotIndex)` converts grid row back to `"HH:MM"`. Drops onto unavailable slots (`.slot-unavailable`) are also silently blocked.
+**Drag & drop rescheduling:** Class blocks are `draggable`. Grid slot divs are drop targets — each carries `day`, `roomId`, and `slotIndex`. Behavior differs by source:
+- **Unscheduled class dropped onto grid:** `findEligibleTeachers()` returns all genre-matching, availability-passing, conflict-free teachers. If none exist the drop is blocked. Otherwise a teacher-picker modal appears so the user selects which teacher to assign.
+- **Already-scheduled class dragged to a new slot:** `findAvailableTeacher()` auto-assigns (verifies existing teacher passes availability + is free, or finds the first eligible one). Drop is blocked if no valid teacher exists.
+
+Both functions check teacher availability via `isWithinAvailability` (full class duration, with 1-minute inset) in addition to conflict-checking. Room availability is also validated with `isWithinAvailability` in the drag handlers — `isRoomSlotAvailable` is **not** used for drop validation, only for visual slot coloring.
+
+`slotIndexToTime(slotIndex)` converts grid row back to `"HH:MM"`.
 
 **Unscheduled panel:** Shown below the grid when any classes lack a day/time. Draggable chips can be dropped onto the grid to schedule them into a specific day + room slot.
 
@@ -139,7 +149,7 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 **Optimize result message:** Shown below the grid after Auto Schedule. Persists until dismissed with a Clear button.
 
-`ClassBlock` colors blocks using the teacher's `color` field (lightened) with a solid left border in the full color.
+`ClassBlock` displays class name, teacher name, and skill level (room is omitted — it's already shown as the column header). Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip matches the same three fields. Block coloring is controlled by `colorMode` (see Color mode toggle above).
 
 ### Export to Excel (`src/utils/exportSchedule.js`)
 
@@ -147,11 +157,11 @@ Uses ExcelJS. Mirrors the room-subdivided weekly grid exactly, with per-day room
 
 - **Row 1:** Corner cell (spans 2 rows) + day headers merged across that day's available room sub-columns. Even days `#500000`, odd days `#732F2F`, white bold text. Days with no available rooms are omitted entirely.
 - **Row 2:** Room sub-headers (only rooms available on that day). Even days `#F9F0F0`, odd days `#EDE8E8`.
-- **Rows 3+:** 28 time slot rows at 24pt height. Available slots: even day white, odd day `#FDF6F6`. Unavailable slots (outside room availability): solid `#E0E0E0`. Time label in column 1.
+- **Rows 3+:** 24 time slot rows at 24pt height. All available slots white (`#FFFFFF`). Unavailable slots (outside room availability): solid `#FF4444`. Time label in column 1 every 30 minutes in `H:MM AM/PM` format. Hour-boundary rows have a dashed `#B0A0A0` top border; day-start columns have a solid medium left border.
 - **Class blocks:** Merged cells spanning slot rows, teacher color lightened 78% for fill, full color for font/border. Displays class name + `"Teacher · Room"` (no time range). `try/catch` around `mergeCells` handles overlapping classes gracefully.
 - **Sheet 2:** Unscheduled classes as a styled flat list.
 - Uses `dayColStart` map and `getCol(day, ri)` for per-day column offsets (days can have different room counts).
-- Local constants match `timeHelpers.js`: `GRID_START_HOUR = 15`, `SLOT_MINUTES = 15`, `TOTAL_SLOTS = 28`.
+- Local constants: `GRID_START_HOUR = 15`, `GRID_START_MIN = 30`, `SLOT_MINUTES = 15`, `TOTAL_SLOTS = 24`. `timeToSlot` accounts for the `:30` start offset.
 - Accepts `visibleDays` and `visibleRooms` so filters applied in the UI are respected.
 - Downloads via `Blob` + `URL.createObjectURL`.
 
@@ -163,13 +173,13 @@ Uses html2canvas + jsPDF.
 - Page size: at minimum A4 landscape (297×210mm); expands width proportionally if the grid aspect ratio requires it.
 - Title ("The Dance Collective McKinney — Weekly Schedule") and generation date printed above the grid image.
 - Grid image scaled with `Math.min(scaleByW, scaleByH)` to fit within available area.
-- Unavailable slots render as solid `#E0E0E0` (CSS background-color), which html2canvas captures reliably. Do not use CSS gradients or patterns for unavailability — html2canvas does not render `repeating-linear-gradient` consistently.
+- Unavailable slots render as solid `#FF4444` (CSS background-color), which html2canvas captures reliably. Do not use CSS gradients or patterns for unavailability — html2canvas does not render `repeating-linear-gradient` consistently.
 
 ### Tables (Classes, Students, Teachers, Rooms pages)
 
 All tables support sortable columns via `sortKey`/`sortDir` state and a `SortTh` component that renders a clickable header with ▲/▼ indicators.
 
-- **Classes:** sortable by all columns; teacher filter is a multi-select dropdown (checkbox list). Includes an "Unassigned" option (sentinel value `'__unassigned__'` in the Set) that matches classes with no `teacherId`. Can be combined with specific teachers. State: `filterTeacherIds` (Set).
+- **Classes:** columns are Class, Skill Level, Teacher, Day & Time, Room, Students (in that order). Sortable by all columns. Two multi-select filters: teacher (includes "Unassigned" sentinel `'__unassigned__'`) and skill level. State: `filterTeacherIds` (Set), `filterSkillLevels` (Set). Skill level displayed as a color-coded badge using `SKILL_BADGE` (same mapping as Students page).
 - **Students:** sortable by all columns; skill level filter is a multi-select dropdown (checkbox list). State: `filterSkills` (Set).
 - **Teachers:** sortable by Name, Genre, Phone, Email, Classes (Availability column not sortable)
 - **Rooms:** sortable by Name, Capacity (Availability column not sortable). Delete uses `ConfirmDialog`.
@@ -190,11 +200,13 @@ Read-only overlay triggered by clicking a `ClassBlock`. Displays class name, gen
 Same grid layout as the Schedule page but interactive — click/drag to paint 30-minute cells. Internally converts between the `[{dayOfWeek, startTime, endTime}]` slot format and a `Set` of `"DayName:slotIndex"` keys. Adjacent painted cells are merged back into contiguous slots on mouseup. Accepts a `color` prop (teachers pass their chosen hex color; rooms use the default `#6c5ce7`). Used in both `TeacherForm` and `RoomForm`.
 
 The editor defines its own local constants **independent of `timeHelpers.js`**:
-- `GRID_START_HOUR = 15` (3:00pm)
+- `GRID_START_HOUR = 15`, `GRID_START_MIN = 30` (3:30pm)
 - `SLOT_MINUTES = 30` (30-minute increments — coarser than the schedule grid's 15-min slots)
-- `TOTAL_SLOTS = 14` (7 hours × 2 slots/hr)
+- `TOTAL_SLOTS = 12` (6 hours × 2 slots/hr, 3:30pm–9:30pm). Imports `GRID_END_HOUR` and `GRID_END_MIN` from `timeHelpers.js` to compute this.
 
-**If `TOTAL_SLOTS` changes, the CSS in `AvailabilityEditor.css` must be updated to match** — specifically `grid-template-rows: 28px repeat(14, 16px)` where the repeated count equals `TOTAL_SLOTS`.
+All time labels show every slot (every 30 min) in consistent `H:MMp` format (e.g. `3:30p`, `4:00p`).
+
+**If `TOTAL_SLOTS` changes, the CSS in `AvailabilityEditor.css` must be updated to match** — specifically `grid-template-rows: 28px repeat(12, 16px)` where the repeated count equals `TOTAL_SLOTS`.
 
 **React anti-pattern to avoid:** Do not call a parent `onChange` prop inside a `setCells` functional state updater. React 18 treats state updaters as part of the render phase; calling another component's state setter there triggers "Cannot update a component while rendering a different component". The fix: maintain a `cellsRef` that mirrors `cells` state, and call `onChange(setToSlots(cellsRef.current))` directly in the `mouseup` handler — outside any state updater.
 
@@ -236,3 +248,5 @@ Global custom properties in `src/App.css` (`:root`). Each component/page has a c
 - **timeHelpers vs AvailabilityEditor constants:** `timeHelpers.js` uses `SLOT_MINUTES = 15` (schedule grid granularity). `AvailabilityEditor.jsx` defines its own local `SLOT_MINUTES = 30` (availability painting granularity). `exportSchedule.js` also defines its own local constants matching `timeHelpers.js`. Keep these in sync intentionally — they are meant to be independent.
 - **AvailabilityEditor onChange in state updater:** Never call `onChange` inside a `setCells(prev => ...)` updater — this triggers the React 18 "Cannot update during render" warning. Use a `cellsRef` to track current cells and call `onChange` directly in the event handler instead.
 - **Auto-unschedule on availability edit:** `teacherCrud.update` and `roomCrud.update` in `useStudioData.js` automatically unschedule any classes that no longer fall within the updated availability (`isWithinAvailability` check). This resets `dayOfWeek`, `startTime`, `roomId`, and `teacherId` to `''` for affected classes. This happens silently — no toast or confirmation.
+- **1-minute availability inset:** `isWithinAvailability` checks `classStart+1` through `classEnd-1` against the availability window. This means a class can start or end exactly at an availability boundary (e.g. a class ending at 9:30pm is valid when availability ends at 9:30pm). All scheduling paths (drag/drop, Auto Schedule, ClassForm warnings) use this function and inherit the inset.
+- **Drag/drop availability gating:** Only `isWithinAvailability` is used to gate drops (room + teacher). `isRoomSlotAvailable` is used only for visual slot coloring. This allows dragging to slots adjacent to unavailable periods as long as the full class duration fits within an availability window.

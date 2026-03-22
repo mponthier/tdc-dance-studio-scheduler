@@ -4,10 +4,10 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import StudentForm from './StudentForm'
 
 const SKILL_BADGE = {
-  'Beginner/Intermediate (6-10)': 'badge-skill-1',
-  'Beginner/Intermediate (10+)':  'badge-skill-2',
-  'Intermediate/Advanced (6-10)': 'badge-skill-3',
-  'Intermediate/Advanced (10+)':  'badge-skill-4',
+  'Beg/Int (6-10)': 'badge-skill-1',
+  'Beg/Int (10+)':  'badge-skill-2',
+  'Int/Adv (6-10)': 'badge-skill-3',
+  'Int/Adv (10+)':  'badge-skill-4',
 }
 
 const SKILL_LEVELS = Object.keys(SKILL_BADGE)

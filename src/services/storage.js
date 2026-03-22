@@ -85,11 +85,11 @@ export function seedDemoData() {
   if (studentsService.getAll().length > 0) return
 
   const defaultAvailability = [
-    { dayOfWeek: 'Monday',    startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Tuesday',   startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Wednesday', startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Thursday',  startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Friday',    startTime: '15:30', endTime: '22:00' },
+    { dayOfWeek: 'Monday',    startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Tuesday',   startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Wednesday', startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Thursday',  startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Friday',    startTime: '15:30', endTime: '21:30' },
   ]
 
   const teachers = [
@@ -133,11 +133,11 @@ export function seedDemoData() {
   teachersService.save(teachers)
 
   const defaultRoomAvailability = [
-    { dayOfWeek: 'Monday',    startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Tuesday',   startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Wednesday', startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Thursday',  startTime: '15:30', endTime: '22:00' },
-    { dayOfWeek: 'Friday',    startTime: '15:30', endTime: '22:00' },
+    { dayOfWeek: 'Monday',    startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Tuesday',   startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Wednesday', startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Thursday',  startTime: '15:30', endTime: '21:30' },
+    { dayOfWeek: 'Friday',    startTime: '15:30', endTime: '21:30' },
   ]
 
   const rooms = [
@@ -149,62 +149,67 @@ export function seedDemoData() {
   roomsService.save(rooms)
 
   const students = [
-    { id: crypto.randomUUID(), name: 'Emma Johnson',    age: 12, skillLevel: 'Beginner/Intermediate (10+)' },
-    { id: crypto.randomUUID(), name: 'Liam Park',       age: 14, skillLevel: 'Intermediate/Advanced (10+)' },
-    { id: crypto.randomUUID(), name: 'Sofia Rivera',    age: 16, skillLevel: 'Intermediate/Advanced (10+)' },
-    { id: crypto.randomUUID(), name: 'Noah Chen',       age: 11, skillLevel: 'Beginner/Intermediate (6-10)' },
-    { id: crypto.randomUUID(), name: 'Olivia Williams', age: 15, skillLevel: 'Intermediate/Advanced (10+)' },
-    { id: crypto.randomUUID(), name: 'Ava Martinez',    age:  9, skillLevel: 'Intermediate/Advanced (6-10)' },
+    { id: crypto.randomUUID(), name: 'Emma Johnson',    age: 12, skillLevel: 'Beg/Int (10+)' },
+    { id: crypto.randomUUID(), name: 'Liam Park',       age: 14, skillLevel: 'Int/Adv (10+)' },
+    { id: crypto.randomUUID(), name: 'Sofia Rivera',    age: 16, skillLevel: 'Int/Adv (10+)' },
+    { id: crypto.randomUUID(), name: 'Noah Chen',       age: 11, skillLevel: 'Beg/Int (6-10)' },
+    { id: crypto.randomUUID(), name: 'Olivia Williams', age: 15, skillLevel: 'Int/Adv (10+)' },
+    { id: crypto.randomUUID(), name: 'Ava Martinez',    age:  9, skillLevel: 'Int/Adv (6-10)' },
   ]
   studentsService.save(students)
 
-  const mk = (name, style, mins) => ({
-    id: crypto.randomUUID(), name, style,
+  const mk = (name, style, mins, skillLevel = '') => ({
+    id: crypto.randomUUID(), name, style, skillLevel,
     teacherId: '', roomId: '', dayOfWeek: '', startTime: '',
     durationMinutes: mins, enrolledStudentIds: [],
   })
 
+  const BI6  = 'Beg/Int (6-10)'
+  const BI10 = 'Beg/Int (10+)'
+  const IA6  = 'Int/Adv (6-10)'
+  const IA10 = 'Int/Adv (10+)'
+
   const classes = [
     // Ballet (5)
-    mk('Mini Ballet',          'Ballet',          45),
-    mk('Ballet Basics',        'Ballet',          60),
-    mk('Ballet II',            'Ballet',          60),
-    mk('Ballet III',           'Ballet',          60),
-    mk('Ballet Advanced',      'Ballet',          90),
+    mk('Mini Ballet',          'Ballet',          45, BI6),
+    mk('Ballet Basics',        'Ballet',          60, BI10),
+    mk('Ballet II',            'Ballet',          60, BI10),
+    mk('Ballet III',           'Ballet',          60, IA6),
+    mk('Ballet Advanced',      'Ballet',          90, IA10),
     // Contemporary (3)
-    mk('Contemporary I',       'Contemporary',    60),
-    mk('Contemporary II',      'Contemporary',    60),
-    mk('Teen Contemporary',    'Contemporary',    45),
+    mk('Contemporary I',       'Contemporary',    60, BI10),
+    mk('Contemporary II',      'Contemporary',    60, IA6),
+    mk('Teen Contemporary',    'Contemporary',    45, IA10),
     // Lyrical (3)
-    mk('Lyrical I',            'Lyrical',         45),
-    mk('Lyrical II',           'Lyrical',         60),
-    mk('Teen Lyrical',         'Lyrical',         60),
+    mk('Lyrical I',            'Lyrical',         45, BI6),
+    mk('Lyrical II',           'Lyrical',         60, IA6),
+    mk('Teen Lyrical',         'Lyrical',         60, IA10),
     // Pointe (2)
-    mk('Pointe I',             'Pointe',          45),
-    mk('Pointe Advanced',      'Pointe',          60),
+    mk('Pointe I',             'Pointe',          45, BI10),
+    mk('Pointe Advanced',      'Pointe',          60, IA10),
     // Musical Theater (2)
-    mk('Musical Theater',      'Musical Theater', 60),
-    mk('Teen Musical Theater', 'Musical Theater', 60),
+    mk('Musical Theater',      'Musical Theater', 60, BI10),
+    mk('Teen Musical Theater', 'Musical Theater', 60, IA10),
     // Hip Hop (4)
-    mk('Mini Hip Hop',         'Hip Hop',         30),
-    mk('Hip Hop Foundations',  'Hip Hop',         60),
-    mk('Hip Hop II',           'Hip Hop',         45),
-    mk('Hip Hop Advanced',     'Hip Hop',         60),
+    mk('Mini Hip Hop',         'Hip Hop',         30, BI6),
+    mk('Hip Hop Foundations',  'Hip Hop',         60, BI10),
+    mk('Hip Hop II',           'Hip Hop',         45, IA6),
+    mk('Hip Hop Advanced',     'Hip Hop',         60, IA10),
     // Jazz (4)
-    mk('Jazz Beginners',       'Jazz',            45),
-    mk('Jazz II',              'Jazz',            45),
-    mk('Jazz Funk',            'Jazz',            60),
-    mk('Teen Jazz',            'Jazz',            60),
+    mk('Jazz Beginners',       'Jazz',            45, BI6),
+    mk('Jazz II',              'Jazz',            45, IA6),
+    mk('Jazz Funk',            'Jazz',            60, IA6),
+    mk('Teen Jazz',            'Jazz',            60, IA10),
     // Drill (2)
-    mk('Drill Team Prep',      'Drill',           60),
-    mk('Drill Advanced',       'Drill',           90),
+    mk('Drill Team Prep',      'Drill',           60, BI10),
+    mk('Drill Advanced',       'Drill',           90, IA10),
     // All-Star (2)
-    mk('All-Star Junior',      'All-Star',        60),
-    mk('All-Star Company',     'All-Star',        90),
+    mk('All-Star Junior',      'All-Star',        60, BI6),
+    mk('All-Star Company',     'All-Star',        90, IA10),
     // Tap (3)
-    mk('Mini Tap',             'Tap',             30),
-    mk('Tap Beginners',        'Tap',             60),
-    mk('Tap Advanced',         'Tap',             60),
+    mk('Mini Tap',             'Tap',             30, BI6),
+    mk('Tap Beginners',        'Tap',             60, BI10),
+    mk('Tap Advanced',         'Tap',             60, IA10),
   ]
   classesService.save(classes)
 }

@@ -1,11 +1,29 @@
 import { isWithinAvailability } from './availability'
 import { detectConflicts } from './conflicts'
-import { DAYS, GRID_START_HOUR, GRID_END_HOUR, SLOT_MINUTES } from './timeHelpers'
+import { DAYS, GRID_START_HOUR, GRID_START_MIN, GRID_END_HOUR, GRID_END_MIN, SLOT_MINUTES } from './timeHelpers'
 
 function minsToTime(totalMins) {
   const h = Math.floor(totalMins / 60)
   const m = totalMins % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function toMins(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number)
+  return h * 60 + m
+}
+
+function hasSkillLevelConflict(candidate, placedClasses) {
+  if (!candidate.skillLevel) return false
+  const candStart = toMins(candidate.startTime)
+  const candEnd   = candStart + candidate.durationMinutes
+  return placedClasses.some((p) =>
+    p.skillLevel === candidate.skillLevel &&
+    p.dayOfWeek  === candidate.dayOfWeek &&
+    p.startTime  &&
+    toMins(p.startTime) < candEnd &&
+    toMins(p.startTime) + p.durationMinutes > candStart
+  )
 }
 
 function eligibleTeachers(cls, teachers) {
@@ -30,8 +48,8 @@ export function optimizeSchedule(classes, teachers, rooms) {
   const placed = [...alreadyScheduled]
   const updated = []
 
-  const gridStartMins = GRID_START_HOUR * 60
-  const gridEndMins   = GRID_END_HOUR * 60
+  const gridStartMins = GRID_START_HOUR * 60 + GRID_START_MIN
+  const gridEndMins   = GRID_END_HOUR * 60 + GRID_END_MIN
 
   for (const cls of unscheduled) {
     // Determine which teachers to try
@@ -67,6 +85,7 @@ export function optimizeSchedule(classes, teachers, rooms) {
             if (!isWithinAvailability(room.availability, day, startTime, cls.durationMinutes)) continue
 
             const candidate = { ...cls, dayOfWeek: day, startTime, roomId: room.id, teacherId: teacher.id }
+            if (hasSkillLevelConflict(candidate, placed)) continue
             if (detectConflicts(candidate, placed).length === 0) {
               placed.push(candidate)
               updated.push(candidate)

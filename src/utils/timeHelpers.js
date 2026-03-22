@@ -1,8 +1,10 @@
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 export const GRID_START_HOUR = 15
-export const GRID_END_HOUR = 22
+export const GRID_START_MIN  = 30
+export const GRID_END_HOUR   = 21
+export const GRID_END_MIN    = 30
 export const SLOT_MINUTES = 15
-export const TOTAL_SLOTS = ((GRID_END_HOUR - GRID_START_HOUR) * 60) / SLOT_MINUTES // 28
+export const TOTAL_SLOTS = ((GRID_END_HOUR * 60 + GRID_END_MIN) - (GRID_START_HOUR * 60 + GRID_START_MIN)) / SLOT_MINUTES // 24
 
 // col 1 = time labels, col 2 = Monday ... col 8 = Sunday
 export function dayToColumn(dayName) {
@@ -12,7 +14,7 @@ export function dayToColumn(dayName) {
 // row 1 = header, rows 2..33 = time slots
 export function timeToRow(timeStr) {
   const [h, m] = timeStr.split(':').map(Number)
-  const minutesFromStart = (h - GRID_START_HOUR) * 60 + m
+  const minutesFromStart = h * 60 + m - (GRID_START_HOUR * 60 + GRID_START_MIN)
   return Math.floor(minutesFromStart / SLOT_MINUTES) + 2
 }
 

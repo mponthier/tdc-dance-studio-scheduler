@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect } from 'react'
 import ClassBlock from './ClassBlock'
 import ClassDetailPanel from './ClassDetailPanel'
-import { DAYS, GRID_START_HOUR, TOTAL_SLOTS, SLOT_MINUTES, durationToRowSpan, timeToRow } from '../../utils/timeHelpers'
+import { DAYS, GRID_START_HOUR, GRID_START_MIN, TOTAL_SLOTS, SLOT_MINUTES, durationToRowSpan, timeToRow } from '../../utils/timeHelpers'
 import { findAllConflictingIds } from '../../utils/conflicts'
+import { isWithinAvailability } from '../../utils/availability'
 import { optimizeSchedule } from '../../utils/optimizer'
 import { exportScheduleToExcel } from '../../utils/exportSchedule'
 import { exportScheduleToPDF } from '../../utils/exportPDF'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import './SchedulePage.css'
+
+const SKILL_LEVELS = ['Beg/Int (6-10)', 'Beg/Int (10+)', 'Int/Adv (6-10)', 'Int/Adv (10+)']
 
 const BASE_DAY_HDR   = 52  // px — day header row base height
 const BASE_ROOM_HDR  = 28  // px — room sub-header row base height
@@ -25,31 +28,47 @@ function toMins(timeStr) {
 
 function isRoomSlotAvailable(room, day, slotIndex) {
   if (!room.availability || room.availability.length === 0) return true
-  const slotMins = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
+  const slotMins = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
   return room.availability.some(
     (slot) => slot.dayOfWeek === day && toMins(slot.startTime) <= slotMins && toMins(slot.endTime) > slotMins
   )
 }
 
-/** Returns the teacher to assign for a drop, or null if none is available.
+/** Returns the teacher to assign for a rescheduled (already-scheduled) drop, or null if none is available.
  *  - If cls already has a teacher, returns that teacher only if they are free.
  *  - If cls has no teacher, finds the first eligible (by style) free teacher. */
 function findAvailableTeacher(cls, day, slotIndex, allTeachers, allClasses) {
+  const startTime = slotIndexToTime(slotIndex)
   if (cls.teacherId) {
-    return isTeacherFreeForSlot(cls.teacherId, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
-      ? allTeachers.find((t) => t.id === cls.teacherId) || null
-      : null
+    const teacher = allTeachers.find((t) => t.id === cls.teacherId)
+    if (!teacher) return null
+    if (!isWithinAvailability(teacher.availability, day, startTime, cls.durationMinutes)) return null
+    return isTeacherFreeForSlot(cls.teacherId, day, slotIndex, cls.durationMinutes, cls.id, allClasses) ? teacher : null
   }
   return allTeachers.find((t) => {
     const specs = Array.isArray(t.specialty) ? t.specialty : (t.specialty ? [t.specialty] : [])
     const matchesStyle = !cls.style || specs.length === 0 || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
-    return matchesStyle && isTeacherFreeForSlot(t.id, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
+    return matchesStyle &&
+      isWithinAvailability(t.availability, day, startTime, cls.durationMinutes) &&
+      isTeacherFreeForSlot(t.id, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
   }) || null
+}
+
+/** Returns all teachers eligible to teach cls at the given slot (genre match + availability + no conflict). */
+function findEligibleTeachers(cls, day, slotIndex, allTeachers, allClasses) {
+  const startTime = slotIndexToTime(slotIndex)
+  return allTeachers.filter((t) => {
+    const specs = Array.isArray(t.specialty) ? t.specialty : (t.specialty ? [t.specialty] : [])
+    const matchesStyle = !cls.style || specs.length === 0 || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
+    return matchesStyle &&
+      isWithinAvailability(t.availability, day, startTime, cls.durationMinutes) &&
+      isTeacherFreeForSlot(t.id, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
+  })
 }
 
 function isTeacherFreeForSlot(teacherId, day, slotIndex, durationMinutes, excludeClassId, allClasses) {
   if (!teacherId) return true
-  const propStart = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
+  const propStart = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
   const propEnd   = propStart + durationMinutes
   return !allClasses.some(
     (cls) =>
@@ -63,7 +82,7 @@ function isTeacherFreeForSlot(teacherId, day, slotIndex, durationMinutes, exclud
 }
 
 function slotIndexToTime(slotIndex) {
-  const totalMins = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
+  const totalMins = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
   const h = Math.floor(totalMins / 60)
   const m = totalMins % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
@@ -84,7 +103,7 @@ function assignLanes(colClasses) {
   return { laneMap, totalLanes: Math.max(1, laneEnds.length) }
 }
 
-function RoomColumn({ col, colClasses, teachers, rooms, conflictIds, slotHeight, onSelect, onContextMenu, onDragStart, onDragEnd }) {
+function RoomColumn({ col, colClasses, teachers, rooms, conflictIds, slotHeight, colorMode, onSelect, onContextMenu, onDragStart, onDragEnd }) {
   const { laneMap, totalLanes } = assignLanes(colClasses)
   return (
     <div style={{ gridColumn: col, gridRow: `${TIME_ROW_OFFSET} / span ${TOTAL_SLOTS}`, position: 'relative', pointerEvents: 'none' }}>
@@ -110,6 +129,7 @@ function RoomColumn({ col, colClasses, teachers, rooms, conflictIds, slotHeight,
               margin: 0,
               boxSizing: 'border-box',
             }}
+            colorMode={colorMode}
             onClick={() => onSelect(cls)}
             onContextMenu={onContextMenu}
             onDragStart={onDragStart}
@@ -144,15 +164,18 @@ function UnscheduledChip({ cls, teacher, onDragStart, onDragEnd }) {
 }
 
 function TimeLabel({ slotIndex }) {
-  const totalMins = slotIndex * SLOT_MINUTES
-  const h = GRID_START_HOUR + Math.floor(totalMins / 60)
+  const totalMins = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
+  const h = Math.floor(totalMins / 60)
   const m = totalMins % 60
-  if (m !== 0) return <div className="time-label" style={{ gridColumn: 1, gridRow: slotIndex + TIME_ROW_OFFSET }} />
+  const isHourBoundary = (GRID_START_MIN + slotIndex * SLOT_MINUTES) % 60 === 0
+  const cls = `time-label${isHourBoundary ? ' hour-boundary' : ''}`
+  if (slotIndex % 2 !== 0) return <div className={cls} style={{ gridColumn: 1, gridRow: slotIndex + TIME_ROW_OFFSET }} />
   const suffix = h >= 12 ? 'pm' : 'am'
   const hour = h % 12 || 12
+  const label = `${hour}:${String(m).padStart(2, '0')}${suffix}`
   return (
-    <div className="time-label" style={{ gridColumn: 1, gridRow: slotIndex + TIME_ROW_OFFSET }}>
-      {hour}{suffix}
+    <div className={cls} style={{ gridColumn: 1, gridRow: slotIndex + TIME_ROW_OFFSET }}>
+      {label}
     </div>
   )
 }
@@ -171,6 +194,10 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   const [contextMenu, setContextMenu]     = useState(null) // { cls, x, y }
   const [confirmCls, setConfirmCls]       = useState(null)
   const [confirmClear, setConfirmClear]   = useState(false)
+  const [teacherPickerDrop, setTeacherPickerDrop] = useState(null)
+  const [colorMode, setColorMode]         = useState('teacher') // 'teacher' | 'skillLevel'
+  const [filterSkillLevels, setFilterSkillLevels] = useState(new Set())
+  const [skillDropOpen, setSkillDropOpen] = useState(false) // { cls, day, roomId, slotIndex, eligibleTeachers }
   const [zoom, setZoom]                   = useState(1.0)
 
   useEffect(() => {
@@ -181,11 +208,11 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   }, [contextMenu])
 
   useEffect(() => {
-    if (!teacherDropOpen && !roomDropOpen) return
-    function close() { setTeacherDropOpen(false); setRoomDropOpen(false) }
+    if (!teacherDropOpen && !roomDropOpen && !skillDropOpen) return
+    function close() { setTeacherDropOpen(false); setRoomDropOpen(false); setSkillDropOpen(false) }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
-  }, [teacherDropOpen, roomDropOpen])
+  }, [teacherDropOpen, roomDropOpen, skillDropOpen])
 
   const slotHeight  = Math.round(BASE_SLOT     * zoom)
   const dayHdrH     = Math.round(BASE_DAY_HDR  * zoom)
@@ -266,8 +293,14 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
     const cls = classes.find((c) => c.id === draggingId)
     if (!cls) return
     const room = rooms.find((r) => r.id === roomId)
-    if (!room || !isRoomSlotAvailable(room, day, slotIndex)) return
-    if (!findAvailableTeacher(cls, day, slotIndex, teachers, classes)) return
+    if (!room) return
+    if (!isWithinAvailability(room.availability, day, slotIndexToTime(slotIndex), cls.durationMinutes)) return
+    const isUnscheduled = !cls.dayOfWeek || !cls.startTime
+    if (isUnscheduled) {
+      if (findEligibleTeachers(cls, day, slotIndex, teachers, classes).length === 0) return
+    } else {
+      if (!findAvailableTeacher(cls, day, slotIndex, teachers, classes)) return
+    }
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (!dragOverSlot || dragOverSlot.day !== day || dragOverSlot.roomId !== roomId || dragOverSlot.slotIndex !== slotIndex) {
@@ -277,14 +310,22 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
 
   function handleSlotDrop(e, day, roomId, slotIndex) {
     e.preventDefault()
-    const room = rooms.find((r) => r.id === roomId)
-    if (!room || !isRoomSlotAvailable(room, day, slotIndex)) return
     const classId = e.dataTransfer.getData('text/plain')
     const cls = classes.find((c) => c.id === classId)
     if (!cls) return
-    const teacher = findAvailableTeacher(cls, day, slotIndex, teachers, classes)
-    if (!teacher) return
-    classCrud.update({ ...cls, dayOfWeek: day, startTime: slotIndexToTime(slotIndex), roomId, teacherId: teacher.id })
+    const room = rooms.find((r) => r.id === roomId)
+    if (!room) return
+    if (!isWithinAvailability(room.availability, day, slotIndexToTime(slotIndex), cls.durationMinutes)) return
+    const isUnscheduled = !cls.dayOfWeek || !cls.startTime
+    if (isUnscheduled) {
+      const eligible = findEligibleTeachers(cls, day, slotIndex, teachers, classes)
+      if (eligible.length === 0) return
+      setTeacherPickerDrop({ cls, day, roomId, slotIndex, eligibleTeachers: eligible })
+    } else {
+      const teacher = findAvailableTeacher(cls, day, slotIndex, teachers, classes)
+      if (!teacher) return
+      classCrud.update({ ...cls, dayOfWeek: day, startTime: slotIndexToTime(slotIndex), roomId, teacherId: teacher.id })
+    }
     setDraggingId(null)
     setDragOverSlot(null)
   }
@@ -297,8 +338,9 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   const unscheduledClasses = classes.filter((c) => !c.dayOfWeek || !c.startTime)
   const scheduledClasses   = classes.filter((c) => c.dayOfWeek && c.startTime)
   const visibleClasses     = scheduledClasses
-    .filter((c) => filterTeacherIds.size === 0 || filterTeacherIds.has(c.teacherId))
-    .filter((c) => filterRoomIds.size    === 0 || filterRoomIds.has(c.roomId))
+    .filter((c) => filterTeacherIds.size  === 0 || filterTeacherIds.has(c.teacherId))
+    .filter((c) => filterRoomIds.size     === 0 || filterRoomIds.has(c.roomId))
+    .filter((c) => filterSkillLevels.size === 0 || filterSkillLevels.has(c.skillLevel || ''))
 
   // Group visible classes by (day, roomId) for each column
   const classesByCol = {}
@@ -326,7 +368,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
               <button
                 type="button"
                 className={`schedule-filter-btn${filterTeacherIds.size > 0 ? ' active' : ''}`}
-                onClick={() => { setTeacherDropOpen((o) => !o); setRoomDropOpen(false) }}
+                onClick={() => { setTeacherDropOpen((o) => !o); setRoomDropOpen(false); setSkillDropOpen(false) }}
               >
                 {filterTeacherIds.size === 0
                   ? 'All teachers'
@@ -364,7 +406,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
               <button
                 type="button"
                 className={`schedule-filter-btn${filterRoomIds.size > 0 ? ' active' : ''}`}
-                onClick={() => { setRoomDropOpen((o) => !o); setTeacherDropOpen(false) }}
+                onClick={() => { setRoomDropOpen((o) => !o); setTeacherDropOpen(false); setSkillDropOpen(false) }}
               >
                 {filterRoomIds.size === 0
                   ? 'All rooms'
@@ -397,15 +439,52 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                 </div>
               )}
             </div>
-            <button className="btn btn-primary" onClick={() => exportScheduleToPDF(gridRef.current)} disabled={scheduledClasses.length === 0}>
-              Export to PDF
-            </button>
+            <div className="filter-dropdown-wrap">
+              <button
+                type="button"
+                className={`schedule-filter-btn${filterSkillLevels.size > 0 ? ' active' : ''}`}
+                onClick={() => { setSkillDropOpen((o) => !o); setTeacherDropOpen(false); setRoomDropOpen(false) }}
+              >
+                {filterSkillLevels.size === 0
+                  ? 'All skill levels'
+                  : filterSkillLevels.size === 1
+                    ? [...filterSkillLevels][0]
+                    : `${filterSkillLevels.size} skill levels`}
+                <span className="filter-caret">▾</span>
+              </button>
+              {skillDropOpen && (
+                <div className="filter-dropdown" onMouseDown={(e) => e.stopPropagation()}>
+                  {filterSkillLevels.size > 0 && (
+                    <button type="button" className="filter-dropdown-clear" onClick={() => setFilterSkillLevels(new Set())}>
+                      Clear selection
+                    </button>
+                  )}
+                  {SKILL_LEVELS.map((s) => (
+                    <label key={s} className="filter-dropdown-item">
+                      <input
+                        type="checkbox"
+                        checked={filterSkillLevels.has(s)}
+                        onChange={(e) => setFilterSkillLevels((prev) => {
+                          const next = new Set(prev)
+                          e.target.checked ? next.add(s) : next.delete(s)
+                          return next
+                        })}
+                      />
+                      {s}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               className="btn btn-primary"
               onClick={() => exportScheduleToExcel(visibleClasses.filter((c) => !hiddenDays.has(c.dayOfWeek)), teachers, rooms, students, visibleDays, visibleRooms)}
               disabled={scheduledClasses.length === 0}
             >
               Export to Excel
+            </button>
+            <button className="btn btn-primary" onClick={() => exportScheduleToPDF(gridRef.current)} disabled={scheduledClasses.length === 0}>
+              Export to PDF
             </button>
             <button className="btn btn-primary" onClick={() => setConfirmClear(true)} disabled={scheduledClasses.length === 0}>
               Clear Schedule
@@ -430,11 +509,29 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
             </button>
           ))}
         </div>
-        <div className="zoom-controls">
-          <button className="zoom-btn" onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.1).toFixed(1)))} title="Zoom out">−</button>
-          <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-          <button className="zoom-btn" onClick={() => setZoom((z) => Math.min(2.0, +(z + 0.1).toFixed(1)))} title="Zoom in">+</button>
-          {zoom !== 1.0 && <button className="zoom-btn zoom-reset" onClick={() => setZoom(1.0)} title="Reset zoom">↺</button>}
+        <div className="toolbar-right">
+          <div className="color-mode-toggle">
+            <button
+              className={`color-mode-btn${colorMode === 'teacher' ? ' active' : ''}`}
+              onClick={() => setColorMode('teacher')}
+              title="Color by teacher"
+            >
+              Teacher
+            </button>
+            <button
+              className={`color-mode-btn${colorMode === 'skillLevel' ? ' active' : ''}`}
+              onClick={() => setColorMode('skillLevel')}
+              title="Color by skill level"
+            >
+              Skill Level
+            </button>
+          </div>
+          <div className="zoom-controls">
+            <button className="zoom-btn" onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.1).toFixed(1)))} title="Zoom out">−</button>
+            <span className="zoom-label">{Math.round(zoom * 100)}%</span>
+            <button className="zoom-btn" onClick={() => setZoom((z) => Math.min(2.0, +(z + 0.1).toFixed(1)))} title="Zoom in">+</button>
+            {zoom !== 1.0 && <button className="zoom-btn zoom-reset" onClick={() => setZoom(1.0)} title="Reset zoom">↺</button>}
+          </div>
         </div>
       </div>
 
@@ -501,10 +598,11 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                   const isDayEven = di % 2 === 0
                   const isDayStart = ri === 0 && di > 0
                   const isUnavailable = !isRoomSlotAvailable(room, day, slotIdx)
+                  const isHourBoundary = (GRID_START_MIN + slotIdx * SLOT_MINUTES) % 60 === 0
                   return (
                     <div
                       key={`${day}-${room.id}-${slotIdx}`}
-                      className={`grid-slot${isOver ? ' drag-over' : ''}${isDayEven ? ' day-even' : ' day-odd'}${isDayStart ? ' day-start' : ''}${isUnavailable ? ' slot-unavailable' : ''}`}
+                      className={`grid-slot${isOver ? ' drag-over' : ''}${isDayEven ? ' day-even' : ' day-odd'}${isDayStart ? ' day-start' : ''}${isUnavailable ? ' slot-unavailable' : ''}${isHourBoundary ? ' hour-boundary' : ''}`}
                       style={{ gridColumn: col, gridRow: slotIdx + TIME_ROW_OFFSET }}
                       onDragOver={(e) => handleSlotDragOver(e, day, room.id, slotIdx)}
                       onDrop={(e) => handleSlotDrop(e, day, room.id, slotIdx)}
@@ -530,6 +628,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                     rooms={rooms}
                     conflictIds={conflictIds}
                     slotHeight={slotHeight}
+                    colorMode={colorMode}
                     onSelect={setSelected}
                     onContextMenu={handleContextMenu}
                     onDragStart={setDraggingId}
@@ -606,6 +705,32 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={() => setConfirmCls(null)}>Cancel</button>
             <button className="btn btn-danger" onClick={handleUnscheduleConfirm}>Unschedule</button>
+          </div>
+        </Modal>
+      )}
+
+      {teacherPickerDrop && (
+        <Modal title={`Select Teacher — ${teacherPickerDrop.cls.name}`} onClose={() => setTeacherPickerDrop(null)}>
+          <div className="modal-body">
+            <div className="teacher-picker-list">
+              {teacherPickerDrop.eligibleTeachers.map((t) => (
+                <button
+                  key={t.id}
+                  className="teacher-picker-item"
+                  onClick={() => {
+                    const { cls, day, roomId, slotIndex } = teacherPickerDrop
+                    classCrud.update({ ...cls, dayOfWeek: day, startTime: slotIndexToTime(slotIndex), roomId, teacherId: t.id })
+                    setTeacherPickerDrop(null)
+                  }}
+                >
+                  <span className="teacher-picker-dot" style={{ background: t.color || '#888' }} />
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={() => setTeacherPickerDrop(null)}>Cancel</button>
           </div>
         </Modal>
       )}

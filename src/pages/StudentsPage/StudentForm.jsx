@@ -1,10 +1,10 @@
 import { useState } from 'react'
 
 const SKILL_LEVELS = [
-  'Beginner/Intermediate (6-10)',
-  'Beginner/Intermediate (10+)',
-  'Intermediate/Advanced (6-10)',
-  'Intermediate/Advanced (10+)',
+  'Beg/Int (6-10)',
+  'Beg/Int (10+)',
+  'Int/Adv (6-10)',
+  'Int/Adv (10+)',
 ]
 
 const DEFAULTS = { name: '', age: '', skillLevel: SKILL_LEVELS[0] }

@@ -1,8 +1,9 @@
 import ExcelJS from 'exceljs'
 
 const GRID_START_HOUR = 15
+const GRID_START_MIN  = 30
 const SLOT_MINUTES    = 15
-const TOTAL_SLOTS     = ((22 - GRID_START_HOUR) * 60) / SLOT_MINUTES // 28
+const TOTAL_SLOTS     = ((21 * 60 + 30) - (GRID_START_HOUR * 60 + GRID_START_MIN)) / SLOT_MINUTES // 24
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 // Colours matching the UI
@@ -37,22 +38,25 @@ function toMins(timeStr) {
 
 function timeToSlot(timeStr) {
   const [h, m] = timeStr.split(':').map(Number)
-  return (h - GRID_START_HOUR) * (60 / SLOT_MINUTES) + Math.floor(m / SLOT_MINUTES)
+  return Math.floor((h * 60 + m - (GRID_START_HOUR * 60 + GRID_START_MIN)) / SLOT_MINUTES)
 }
 
 function isRoomSlotAvailable(room, day, slot) {
   if (!room.availability || room.availability.length === 0) return true
-  const slotMins = GRID_START_HOUR * 60 + slot * SLOT_MINUTES
+  const slotMins = GRID_START_HOUR * 60 + GRID_START_MIN + slot * SLOT_MINUTES
   return room.availability.some(
     (s) => s.dayOfWeek === day && toMins(s.startTime) <= slotMins && toMins(s.endTime) > slotMins
   )
 }
 
 function slotToLabel(slot) {
-  const totalMins = GRID_START_HOUR * 60 + slot * SLOT_MINUTES
+  if (slot % 2 !== 0) return ''
+  const totalMins = GRID_START_HOUR * 60 + GRID_START_MIN + slot * SLOT_MINUTES
   const h = Math.floor(totalMins / 60)
-  if (totalMins % 60 !== 0) return ''
-  return `${h % 12 || 12} ${h >= 12 ? 'PM' : 'AM'}`
+  const m = totalMins % 60
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 || 12
+  return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, '0')} ${suffix}`
 }
 
 // ── Main export ────────────────────────────────────────────────────────────────
@@ -137,8 +141,8 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
       cell.font  = { bold: true, color: { argb: isOdd ? 'FF5A3535' : 'FF500000' }, size: 9 }
       cell.alignment = { horizontal: 'center', vertical: 'middle' }
       cell.border = {
-        left:   (ri === 0 && isDayStart) ? { style: 'medium', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFE0E0E0' } },
-        right:  { style: 'thin', color: { argb: 'FFE0E0E0' } },
+        left:   (ri === 0 && isDayStart) ? { style: 'medium', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFFF4444' } },
+        right:  { style: 'thin', color: { argb: 'FFFF4444' } },
         bottom: { style: 'medium', color: { argb: 'FFB0A0A0' } },
       }
     })
@@ -148,7 +152,8 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
   for (let slot = 0; slot < TOTAL_SLOTS; slot++) {
     const rowNum = slot + 3
     ws.getRow(rowNum).height = 24
-    const isHour = slot % 4 === 0  // every 4 slots = 1 hour at 15-min granularity
+    const isHourBoundary = (GRID_START_MIN + slot * SLOT_MINUTES) % 60 === 0
+    const is30min        = slot % 2 === 0  // label rows (every 30 min)
 
     // Time label
     const timeCell = ws.getCell(rowNum, 1)
@@ -157,24 +162,24 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
     timeCell.alignment = { horizontal: 'right', vertical: 'top' }
     timeCell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: TIME_COL_BG } }
     timeCell.border = {
-      right:  { style: 'thin',   color: { argb: 'FFE0E0E0' } },
-      bottom: { style: 'thin',   color: { argb: isHour ? 'FFE0E0E0' : 'FFF0EFE8' } },
+      top:    isHourBoundary ? { style: 'dashed', color: { argb: 'FFB0A0A0' } } : undefined,
+      right:  { style: 'thin', color: { argb: 'FFFF4444' } },
+      bottom: { style: 'thin', color: { argb: is30min ? 'FFFF4444' : 'FFF0EFE8' } },
     }
 
     // Slot cells per day × room
     days.forEach((day, di) => {
-      const isOdd      = di % 2 === 1
       const isDayStart = di > 0
       roomsByDay[day].forEach((room, ri) => {
         const col  = getCol(day, ri)
         const cell = ws.getCell(rowNum, col)
         const unavailable = !isRoomSlotAvailable(room, day, slot)
-        const baseFg = isOdd ? SLOT_ODD : SLOT_EVEN
-        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: unavailable ? 'FFE0E0E0' : baseFg } }
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: unavailable ? 'FFFF4444' : SLOT_EVEN } }
         cell.border = {
+          top:    isHourBoundary ? { style: 'dashed', color: { argb: 'FFB0A0A0' } } : undefined,
           left:   (ri === 0 && isDayStart) ? { style: 'medium', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFE8E8E8' } },
           right:  { style: 'thin', color: { argb: 'FFE8E8E8' } },
-          bottom: { style: 'thin', color: { argb: isHour ? 'FFE0E0E0' : 'FFF0EFE8' } },
+          bottom: { style: 'thin', color: { argb: is30min ? 'FFFF4444' : 'FFF0EFE8' } },
         }
       })
     })
@@ -218,7 +223,7 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
         top:    { style: 'medium', color: { argb: fgArgb } },
         left:   { style: 'medium', color: { argb: fgArgb } },
         bottom: { style: 'medium', color: { argb: fgArgb } },
-        right:  { style: 'thin',   color: { argb: 'FFE0E0E0' } },
+        right:  { style: 'thin',   color: { argb: 'FFFF4444' } },
       }
     })
 
