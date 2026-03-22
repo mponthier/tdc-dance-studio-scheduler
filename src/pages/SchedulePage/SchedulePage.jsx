@@ -1,0 +1,612 @@
+import { useState, useRef, useEffect } from 'react'
+import ClassBlock from './ClassBlock'
+import ClassDetailPanel from './ClassDetailPanel'
+import { DAYS, GRID_START_HOUR, TOTAL_SLOTS, SLOT_MINUTES, durationToRowSpan, timeToRow } from '../../utils/timeHelpers'
+import { findAllConflictingIds } from '../../utils/conflicts'
+import { optimizeSchedule } from '../../utils/optimizer'
+import { exportScheduleToExcel } from '../../utils/exportSchedule'
+import { exportScheduleToPDF } from '../../utils/exportPDF'
+import Modal from '../../components/Modal'
+import './SchedulePage.css'
+
+const BASE_DAY_HDR   = 52  // px — day header row base height
+const BASE_ROOM_HDR  = 28  // px — room sub-header row base height
+const BASE_SLOT      = 30  // px — half-hour slot base height
+const BASE_TIME_COL  = 56  // px — time label column base width
+const BASE_COL_MIN   = 90  // px — room column minimum base width
+// Grid now has 2 header rows (day + room), so time slots start at CSS grid row 3
+const TIME_ROW_OFFSET = 3
+
+function toMins(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number)
+  return h * 60 + m
+}
+
+function isRoomSlotAvailable(room, day, slotIndex) {
+  if (!room.availability || room.availability.length === 0) return true
+  const slotMins = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
+  return room.availability.some(
+    (slot) => slot.dayOfWeek === day && toMins(slot.startTime) <= slotMins && toMins(slot.endTime) > slotMins
+  )
+}
+
+/** Returns the teacher to assign for a drop, or null if none is available.
+ *  - If cls already has a teacher, returns that teacher only if they are free.
+ *  - If cls has no teacher, finds the first eligible (by style) free teacher. */
+function findAvailableTeacher(cls, day, slotIndex, allTeachers, allClasses) {
+  if (cls.teacherId) {
+    return isTeacherFreeForSlot(cls.teacherId, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
+      ? allTeachers.find((t) => t.id === cls.teacherId) || null
+      : null
+  }
+  return allTeachers.find((t) => {
+    const specs = Array.isArray(t.specialty) ? t.specialty : (t.specialty ? [t.specialty] : [])
+    const matchesStyle = !cls.style || specs.length === 0 || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
+    return matchesStyle && isTeacherFreeForSlot(t.id, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
+  }) || null
+}
+
+function isTeacherFreeForSlot(teacherId, day, slotIndex, durationMinutes, excludeClassId, allClasses) {
+  if (!teacherId) return true
+  const propStart = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
+  const propEnd   = propStart + durationMinutes
+  return !allClasses.some(
+    (cls) =>
+      cls.id !== excludeClassId &&
+      cls.teacherId === teacherId &&
+      cls.dayOfWeek === day &&
+      cls.startTime &&
+      toMins(cls.startTime) < propEnd &&
+      toMins(cls.startTime) + cls.durationMinutes > propStart
+  )
+}
+
+function slotIndexToTime(slotIndex) {
+  const totalMins = GRID_START_HOUR * 60 + slotIndex * SLOT_MINUTES
+  const h = Math.floor(totalMins / 60)
+  const m = totalMins % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function assignLanes(colClasses) {
+  const sorted = [...colClasses].sort((a, b) => toMins(a.startTime) - toMins(b.startTime))
+  const laneEnds = []
+  const laneMap = {}
+  for (const cls of sorted) {
+    const start = toMins(cls.startTime)
+    const end   = start + cls.durationMinutes
+    let lane = laneEnds.findIndex((e) => start >= e)
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(end) }
+    else { laneEnds[lane] = end }
+    laneMap[cls.id] = lane
+  }
+  return { laneMap, totalLanes: Math.max(1, laneEnds.length) }
+}
+
+function RoomColumn({ col, colClasses, teachers, rooms, conflictIds, slotHeight, onSelect, onContextMenu, onDragStart, onDragEnd }) {
+  const { laneMap, totalLanes } = assignLanes(colClasses)
+  return (
+    <div style={{ gridColumn: col, gridRow: `${TIME_ROW_OFFSET} / span ${TOTAL_SLOTS}`, position: 'relative', pointerEvents: 'none' }}>
+      {colClasses.map((cls) => {
+        const lane    = laneMap[cls.id]
+        const top     = (timeToRow(cls.startTime) - 2) * slotHeight + 1
+        const height  = durationToRowSpan(cls.durationMinutes) * slotHeight - 2
+        const teacher = teachers.find((t) => t.id === cls.teacherId)
+        const room    = rooms.find((r) => r.id === cls.roomId)
+        return (
+          <ClassBlock
+            key={cls.id}
+            cls={cls}
+            teacher={teacher}
+            room={room}
+            hasConflict={conflictIds.has(cls.id)}
+            style={{
+              position: 'absolute',
+              top,
+              height,
+              left: `calc(${lane} * 100% / ${totalLanes} + 2px)`,
+              width: `calc(100% / ${totalLanes} - 4px)`,
+              margin: 0,
+              boxSizing: 'border-box',
+            }}
+            onClick={() => onSelect(cls)}
+            onContextMenu={onContextMenu}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function UnscheduledChip({ cls, teacher, onDragStart, onDragEnd }) {
+  const color = teacher?.color || '#888'
+  return (
+    <div
+      draggable
+      className="unscheduled-chip"
+      style={{ borderLeft: `3px solid ${color}`, background: color + '22' }}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', cls.id)
+        onDragStart(cls.id)
+      }}
+      onDragEnd={onDragEnd}
+      title={`Drag to schedule\n${cls.name}${teacher ? ' · ' + teacher.name : ''}`}
+    >
+      <span className="unscheduled-chip-name">{cls.name}</span>
+      {teacher && <span className="unscheduled-chip-meta">{teacher.name}</span>}
+      <span className="unscheduled-chip-meta">{cls.durationMinutes} min</span>
+    </div>
+  )
+}
+
+function TimeLabel({ slotIndex }) {
+  const totalMins = slotIndex * SLOT_MINUTES
+  const h = GRID_START_HOUR + Math.floor(totalMins / 60)
+  const m = totalMins % 60
+  if (m !== 0) return <div className="time-label" style={{ gridColumn: 1, gridRow: slotIndex + TIME_ROW_OFFSET }} />
+  const suffix = h >= 12 ? 'pm' : 'am'
+  const hour = h % 12 || 12
+  return (
+    <div className="time-label" style={{ gridColumn: 1, gridRow: slotIndex + TIME_ROW_OFFSET }}>
+      {hour}{suffix}
+    </div>
+  )
+}
+
+export default function SchedulePage({ classes, teachers, rooms, students, classCrud }) {
+  const gridRef = useRef(null)
+  const [selected, setSelected]           = useState(null)
+  const [optimizeResult, setOptimizeResult] = useState(null)
+  const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
+  const [filterRoomIds, setFilterRoomIds]       = useState(new Set())
+  const [teacherDropOpen, setTeacherDropOpen]   = useState(false)
+  const [roomDropOpen, setRoomDropOpen]         = useState(false)
+  const [hiddenDays, setHiddenDays]       = useState(new Set())
+  const [draggingId, setDraggingId]       = useState(null)
+  const [dragOverSlot, setDragOverSlot]   = useState(null) // { day, roomId, slotIndex }
+  const [contextMenu, setContextMenu]     = useState(null) // { cls, x, y }
+  const [confirmCls, setConfirmCls]       = useState(null)
+  const [zoom, setZoom]                   = useState(1.0)
+
+  useEffect(() => {
+    if (!contextMenu) return
+    function close() { setContextMenu(null) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [contextMenu])
+
+  useEffect(() => {
+    if (!teacherDropOpen && !roomDropOpen) return
+    function close() { setTeacherDropOpen(false); setRoomDropOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [teacherDropOpen, roomDropOpen])
+
+  const slotHeight  = Math.round(BASE_SLOT     * zoom)
+  const dayHdrH     = Math.round(BASE_DAY_HDR  * zoom)
+  const roomHdrH    = Math.round(BASE_ROOM_HDR * zoom)
+  const timeColW    = Math.round(BASE_TIME_COL * zoom)
+  const colMinW     = Math.round(BASE_COL_MIN  * zoom)
+
+  const conflictIds = findAllConflictingIds(classes)
+  const todayName   = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]
+  const hasAnyClasses = classes.length > 0
+
+  const visibleRooms = filterRoomIds.size > 0 ? rooms.filter((r) => filterRoomIds.has(r.id)) : rooms
+
+  function isRoomAvailableOnDay(room, day) {
+    if (!room.availability || room.availability.length === 0) return true
+    return room.availability.some((slot) => slot.dayOfWeek === day)
+  }
+
+  // Days that have at least one room with availability — only these get toggle buttons
+  const daysWithRooms = DAYS.filter((day) => visibleRooms.some((r) => isRoomAvailableOnDay(r, day)))
+  const visibleDays  = daysWithRooms.filter((d) => !hiddenDays.has(d))
+
+  // Per-day room lists — rooms with no availability on a given day are omitted
+  const roomsByDay = {}
+  visibleDays.forEach((day) => {
+    roomsByDay[day] = visibleRooms.filter((r) => isRoomAvailableOnDay(r, day))
+  })
+
+  // Cumulative column start for each day (days with 0 rooms occupy 0 columns)
+  const dayColStart = {}
+  let _colCursor = 2
+  visibleDays.forEach((day) => {
+    dayColStart[day] = _colCursor
+    _colCursor += roomsByDay[day].length
+  })
+  const totalGridCols = _colCursor - 2
+
+  // Column index for a given (day, roomIndex) — 1-based, after time-label col
+  function getCol(day, ri) {
+    return dayColStart[day] + ri
+  }
+
+  function toggleDay(day) {
+    setHiddenDays((prev) => {
+      const next = new Set(prev)
+      next.has(day) ? next.delete(day) : next.add(day)
+      return next
+    })
+  }
+
+  function handleClearSchedule() {
+    classCrud.updateMany(classes.map((c) => ({ ...c, dayOfWeek: '', startTime: '', roomId: '', teacherId: '' })))
+    setOptimizeResult(null)
+  }
+
+  function handleOptimize() {
+    const updated = optimizeSchedule(classes, teachers, rooms)
+    classCrud.updateMany(updated)
+    const updatedIds  = new Set(updated.map((c) => c.id))
+    const failedNames = classes
+      .filter((c) => !c.dayOfWeek || !c.startTime)
+      .filter((c) => !updatedIds.has(c.id))
+      .map((c) => c.name)
+    setOptimizeResult({ scheduled: updated.length, failedNames })
+  }
+
+  function handleContextMenu(e, cls) {
+    setContextMenu({ cls, x: e.clientX, y: e.clientY })
+  }
+
+  function handleUnscheduleConfirm() {
+    classCrud.update({ ...confirmCls, dayOfWeek: '', startTime: '', roomId: '', teacherId: '' })
+    setConfirmCls(null)
+  }
+
+  function handleSlotDragOver(e, day, roomId, slotIndex) {
+    if (!draggingId) return
+    const cls = classes.find((c) => c.id === draggingId)
+    if (!cls) return
+    const room = rooms.find((r) => r.id === roomId)
+    if (!room || !isRoomSlotAvailable(room, day, slotIndex)) return
+    if (!findAvailableTeacher(cls, day, slotIndex, teachers, classes)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (!dragOverSlot || dragOverSlot.day !== day || dragOverSlot.roomId !== roomId || dragOverSlot.slotIndex !== slotIndex) {
+      setDragOverSlot({ day, roomId, slotIndex })
+    }
+  }
+
+  function handleSlotDrop(e, day, roomId, slotIndex) {
+    e.preventDefault()
+    const room = rooms.find((r) => r.id === roomId)
+    if (!room || !isRoomSlotAvailable(room, day, slotIndex)) return
+    const classId = e.dataTransfer.getData('text/plain')
+    const cls = classes.find((c) => c.id === classId)
+    if (!cls) return
+    const teacher = findAvailableTeacher(cls, day, slotIndex, teachers, classes)
+    if (!teacher) return
+    classCrud.update({ ...cls, dayOfWeek: day, startTime: slotIndexToTime(slotIndex), roomId, teacherId: teacher.id })
+    setDraggingId(null)
+    setDragOverSlot(null)
+  }
+
+  function handleDragEnd() {
+    setDraggingId(null)
+    setDragOverSlot(null)
+  }
+
+  const unscheduledClasses = classes.filter((c) => !c.dayOfWeek || !c.startTime)
+  const scheduledClasses   = classes.filter((c) => c.dayOfWeek && c.startTime)
+  const visibleClasses     = scheduledClasses
+    .filter((c) => filterTeacherIds.size === 0 || filterTeacherIds.has(c.teacherId))
+    .filter((c) => filterRoomIds.size    === 0 || filterRoomIds.has(c.roomId))
+
+  // Group visible classes by (day, roomId) for each column
+  const classesByCol = {}
+  visibleDays.forEach((day) => {
+    roomsByDay[day].forEach((room) => {
+      classesByCol[`${day}-${room.id}`] = []
+    })
+  })
+  visibleClasses.forEach((c) => {
+    const key = `${c.dayOfWeek}-${c.roomId}`
+    if (classesByCol[key]) classesByCol[key].push(c)
+  })
+
+  const draggingCls  = draggingId ? classes.find((c) => c.id === draggingId) : null
+  const draggingSpan = draggingCls ? Math.ceil(draggingCls.durationMinutes / SLOT_MINUTES) : 0
+
+
+  return (
+    <div className="schedule-page">
+      <div className="schedule-header">
+        <h1>Weekly Schedule</h1>
+        {hasAnyClasses && (
+          <div className="schedule-header-actions">
+            <div className="filter-dropdown-wrap">
+              <button
+                type="button"
+                className={`schedule-filter-btn${filterTeacherIds.size > 0 ? ' active' : ''}`}
+                onClick={() => { setTeacherDropOpen((o) => !o); setRoomDropOpen(false) }}
+              >
+                {filterTeacherIds.size === 0
+                  ? 'All teachers'
+                  : filterTeacherIds.size === 1
+                    ? teachers.find((t) => filterTeacherIds.has(t.id))?.name ?? 'Teacher'
+                    : `${filterTeacherIds.size} teachers`}
+                <span className="filter-caret">▾</span>
+              </button>
+              {teacherDropOpen && (
+                <div className="filter-dropdown" onMouseDown={(e) => e.stopPropagation()}>
+                  {filterTeacherIds.size > 0 && (
+                    <button type="button" className="filter-dropdown-clear" onClick={() => setFilterTeacherIds(new Set())}>
+                      Clear selection
+                    </button>
+                  )}
+                  {teachers.map((t) => (
+                    <label key={t.id} className="filter-dropdown-item">
+                      <input
+                        type="checkbox"
+                        checked={filterTeacherIds.has(t.id)}
+                        onChange={(e) => setFilterTeacherIds((prev) => {
+                          const next = new Set(prev)
+                          e.target.checked ? next.add(t.id) : next.delete(t.id)
+                          return next
+                        })}
+                      />
+                      <span className="filter-color-dot" style={{ background: t.color || '#888' }} />
+                      {t.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="filter-dropdown-wrap">
+              <button
+                type="button"
+                className={`schedule-filter-btn${filterRoomIds.size > 0 ? ' active' : ''}`}
+                onClick={() => { setRoomDropOpen((o) => !o); setTeacherDropOpen(false) }}
+              >
+                {filterRoomIds.size === 0
+                  ? 'All rooms'
+                  : filterRoomIds.size === 1
+                    ? rooms.find((r) => filterRoomIds.has(r.id))?.name ?? 'Room'
+                    : `${filterRoomIds.size} rooms`}
+                <span className="filter-caret">▾</span>
+              </button>
+              {roomDropOpen && (
+                <div className="filter-dropdown" onMouseDown={(e) => e.stopPropagation()}>
+                  {filterRoomIds.size > 0 && (
+                    <button type="button" className="filter-dropdown-clear" onClick={() => setFilterRoomIds(new Set())}>
+                      Clear selection
+                    </button>
+                  )}
+                  {rooms.map((r) => (
+                    <label key={r.id} className="filter-dropdown-item">
+                      <input
+                        type="checkbox"
+                        checked={filterRoomIds.has(r.id)}
+                        onChange={(e) => setFilterRoomIds((prev) => {
+                          const next = new Set(prev)
+                          e.target.checked ? next.add(r.id) : next.delete(r.id)
+                          return next
+                        })}
+                      />
+                      {r.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button className="btn btn-ghost" onClick={() => exportScheduleToPDF(gridRef.current)} disabled={scheduledClasses.length === 0}>
+              Export to PDF
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => exportScheduleToExcel(visibleClasses.filter((c) => !hiddenDays.has(c.dayOfWeek)), teachers, rooms, students, visibleDays, visibleRooms)}
+              disabled={scheduledClasses.length === 0}
+            >
+              Export to Excel
+            </button>
+            <button className="btn btn-ghost" onClick={handleClearSchedule} disabled={scheduledClasses.length === 0}>
+              Clear Schedule
+            </button>
+            <button className="btn btn-primary" onClick={handleOptimize} disabled={classes.length === 0}>
+              Auto-Schedule
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="schedule-toolbar">
+        <div className="day-toggles">
+          {daysWithRooms.map((day) => (
+            <button
+              key={day}
+              className={`day-toggle${hiddenDays.has(day) ? ' hidden' : ''}`}
+              onClick={() => toggleDay(day)}
+              title={hiddenDays.has(day) ? `Show ${day}` : `Hide ${day}`}
+            >
+              {day.slice(0, 3)}
+            </button>
+          ))}
+        </div>
+        <div className="zoom-controls">
+          <button className="zoom-btn" onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.1).toFixed(1)))} title="Zoom out">−</button>
+          <span className="zoom-label">{Math.round(zoom * 100)}%</span>
+          <button className="zoom-btn" onClick={() => setZoom((z) => Math.min(2.0, +(z + 0.1).toFixed(1)))} title="Zoom in">+</button>
+          {zoom !== 1.0 && <button className="zoom-btn zoom-reset" onClick={() => setZoom(1.0)} title="Reset zoom">↺</button>}
+        </div>
+      </div>
+
+      {!hasAnyClasses ? (
+        <div className="schedule-empty">
+          <div className="empty-icon">📅</div>
+          <p>No classes scheduled yet. Go to <strong>Classes</strong> to create your first class.</p>
+        </div>
+      ) : (
+        <div className="grid-wrapper" ref={gridRef}>
+          <div
+            className="weekly-grid"
+            style={{
+              gridTemplateColumns: `${timeColW}px repeat(${totalGridCols}, minmax(${colMinW}px, 1fr))`,
+              gridTemplateRows: `${dayHdrH}px ${roomHdrH}px repeat(${TOTAL_SLOTS}, ${slotHeight}px)`,
+            }}
+          >
+            {/* Corner — spans both header rows */}
+            <div className="grid-corner" style={{ gridRow: '1 / span 2' }} />
+
+            {/* Day headers — each spans its available room columns */}
+            {visibleDays.map((day, di) => {
+              const dayRooms = roomsByDay[day]
+              if (dayRooms.length === 0) return null
+              return (
+                <div
+                  key={day}
+                  className={`grid-day-header${day === todayName ? ' today' : ''}${di % 2 === 1 ? ' day-odd' : ''}${di > 0 ? ' day-start' : ''}`}
+                  style={{
+                    gridColumn: dayRooms.length > 1 ? `${getCol(day, 0)} / span ${dayRooms.length}` : getCol(day, 0),
+                    gridRow: 1,
+                  }}
+                >
+                  {day.slice(0, 3)}
+                </div>
+              )
+            })}
+
+            {/* Room sub-headers */}
+            {visibleDays.map((day, di) =>
+              roomsByDay[day].map((room, ri) => (
+                <div
+                  key={`${day}-${room.id}-header`}
+                  className={`grid-room-header${day === todayName ? ' today' : ''}${di % 2 === 1 ? ' day-odd' : ''}${ri === 0 && di > 0 ? ' day-start' : ''}`}
+                  style={{ gridColumn: getCol(day, ri), gridRow: 2 }}
+                >
+                  {room.name}
+                </div>
+              ))
+            )}
+
+            {/* Time labels */}
+            {Array.from({ length: TOTAL_SLOTS }, (_, i) => <TimeLabel key={i} slotIndex={i} />)}
+
+            {/* Grid slots (drop targets) */}
+            {Array.from({ length: TOTAL_SLOTS }, (_, slotIdx) =>
+              visibleDays.map((day, di) =>
+                roomsByDay[day].map((room, ri) => {
+                  const col = getCol(day, ri)
+                  const isOver = dragOverSlot?.day === day &&
+                    dragOverSlot?.roomId === room.id &&
+                    slotIdx >= dragOverSlot.slotIndex &&
+                    slotIdx < dragOverSlot.slotIndex + draggingSpan
+                  const isDayEven = di % 2 === 0
+                  const isDayStart = ri === 0 && di > 0
+                  const isUnavailable = !isRoomSlotAvailable(room, day, slotIdx)
+                  return (
+                    <div
+                      key={`${day}-${room.id}-${slotIdx}`}
+                      className={`grid-slot${isOver ? ' drag-over' : ''}${isDayEven ? ' day-even' : ' day-odd'}${isDayStart ? ' day-start' : ''}${isUnavailable ? ' slot-unavailable' : ''}`}
+                      style={{ gridColumn: col, gridRow: slotIdx + TIME_ROW_OFFSET }}
+                      onDragOver={(e) => handleSlotDragOver(e, day, room.id, slotIdx)}
+                      onDrop={(e) => handleSlotDrop(e, day, room.id, slotIdx)}
+                      onDragLeave={() => setDragOverSlot(null)}
+                    />
+                  )
+                })
+              )
+            )}
+
+            {/* Class blocks per (day, room) column */}
+            {visibleDays.map((day) =>
+              roomsByDay[day].map((room, ri) => {
+                const key      = `${day}-${room.id}`
+                const colClasses = classesByCol[key] || []
+                if (colClasses.length === 0) return null
+                return (
+                  <RoomColumn
+                    key={key}
+                    col={getCol(day, ri)}
+                    colClasses={colClasses}
+                    teachers={teachers}
+                    rooms={rooms}
+                    conflictIds={conflictIds}
+                    slotHeight={slotHeight}
+                    onSelect={setSelected}
+                    onContextMenu={handleContextMenu}
+                    onDragStart={setDraggingId}
+                    onDragEnd={handleDragEnd}
+                  />
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {unscheduledClasses.length > 0 && (
+        <div className="unscheduled-panel">
+          <div className="unscheduled-panel-header">
+            Unscheduled Classes — drag to the calendar to schedule
+          </div>
+          <div className="unscheduled-chips">
+            {unscheduledClasses.map((cls) => (
+              <UnscheduledChip
+                key={cls.id}
+                cls={cls}
+                teacher={teachers.find((t) => t.id === cls.teacherId)}
+                onDragStart={setDraggingId}
+                onDragEnd={handleDragEnd}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {optimizeResult && (
+        <div className="optimize-messages">
+          <span>
+            {optimizeResult.scheduled > 0
+              ? `Scheduled ${optimizeResult.scheduled} class${optimizeResult.scheduled !== 1 ? 'es' : ''}.`
+              : 'No classes could be scheduled.'}
+            {optimizeResult.failedNames.length > 0 && ` Could not place: ${optimizeResult.failedNames.join(', ')}.`}
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setOptimizeResult(null)}>Clear</button>
+        </div>
+      )}
+
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            className="context-menu-item context-menu-item-danger"
+            onClick={() => { setConfirmCls(contextMenu.cls); setContextMenu(null) }}
+          >
+            Unschedule class
+          </button>
+        </div>
+      )}
+
+      {confirmCls && (
+        <Modal title="Unschedule Class" onClose={() => setConfirmCls(null)}>
+          <div className="modal-body">
+            <p>Remove <strong>{confirmCls.name}</strong> from the schedule? The class will not be deleted.</p>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={() => setConfirmCls(null)}>Cancel</button>
+            <button className="btn btn-danger" onClick={handleUnscheduleConfirm}>Unschedule</button>
+          </div>
+        </Modal>
+      )}
+
+      {selected && (
+        <ClassDetailPanel
+          cls={selected}
+          teacher={teachers.find((t) => t.id === selected.teacherId)}
+          room={rooms.find((r) => r.id === selected.roomId)}
+          students={students}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </div>
+  )
+}

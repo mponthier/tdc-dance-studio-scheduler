@@ -1,0 +1,267 @@
+import { useState, useEffect } from 'react'
+import Modal from '../../components/Modal'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import ClassForm from './ClassForm'
+import EnrollmentPanel from './EnrollmentPanel'
+import { findAllConflictingIds } from '../../utils/conflicts'
+import { formatTime, addMinutes, DAYS } from '../../utils/timeHelpers'
+
+const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d, i]))
+const UNASSIGNED = '__unassigned__'
+
+function sortClasses(classes, key, dir, teachers, rooms) {
+  const mul = dir === 'asc' ? 1 : -1
+  return [...classes].sort((a, b) => {
+    let av, bv
+    if (key === 'name') {
+      av = a.name.toLowerCase(); bv = b.name.toLowerCase()
+    } else if (key === 'schedule') {
+      av = (DAY_ORDER[a.dayOfWeek] ?? 99) * 10000 + (a.startTime ? parseInt(a.startTime.replace(':', ''), 10) : 9999)
+      bv = (DAY_ORDER[b.dayOfWeek] ?? 99) * 10000 + (b.startTime ? parseInt(b.startTime.replace(':', ''), 10) : 9999)
+    } else if (key === 'teacher') {
+      av = (teachers.find((t) => t.id === a.teacherId)?.name || '').toLowerCase()
+      bv = (teachers.find((t) => t.id === b.teacherId)?.name || '').toLowerCase()
+    } else if (key === 'room') {
+      av = (rooms.find((r) => r.id === a.roomId)?.name || '').toLowerCase()
+      bv = (rooms.find((r) => r.id === b.roomId)?.name || '').toLowerCase()
+    } else if (key === 'students') {
+      av = a.enrolledStudentIds.length; bv = b.enrolledStudentIds.length
+    }
+    return av < bv ? -mul : av > bv ? mul : 0
+  })
+}
+
+export default function ClassesPage({ classes, teachers, rooms, students, classCrud }) {
+  const [modal, setModal] = useState(null)
+  const [enrollClass, setEnrollClass] = useState(null)
+  const [confirmId, setConfirmId] = useState(null)
+  const [sortKey, setSortKey] = useState('name')
+  const [sortDir, setSortDir] = useState('asc')
+  const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
+  const [dropOpen, setDropOpen] = useState(false)
+
+  useEffect(() => {
+    if (!dropOpen) return
+    function close() { setDropOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [dropOpen])
+
+  const conflictIds = findAllConflictingIds(classes)
+
+  function handleSave(data) {
+    if (modal === 'add') {
+      classCrud.add(data)
+    } else {
+      classCrud.update({ ...modal, ...data })
+    }
+    setModal(null)
+  }
+
+  function getTeacher(id) {
+    return teachers.find((t) => t.id === id)?.name || '—'
+  }
+  function getRoom(id) {
+    return rooms.find((r) => r.id === id)?.name || '—'
+  }
+
+  function handleSort(key) {
+    if (sortKey === key) setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  function SortTh({ col, children }) {
+    const active = sortKey === col
+    return (
+      <th onClick={() => handleSort(col)} style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+        {children} {active ? (sortDir === 'asc' ? '▲' : '▼') : <span style={{ opacity: 0.3 }}>▲</span>}
+      </th>
+    )
+  }
+
+  const filtered = filterTeacherIds.size > 0
+    ? classes.filter((c) => {
+        if (!c.teacherId && filterTeacherIds.has(UNASSIGNED)) return true
+        return filterTeacherIds.has(c.teacherId)
+      })
+    : classes
+  const sorted = sortClasses(filtered, sortKey, sortDir, teachers, rooms)
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1>Classes</h1>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="filter-dropdown-wrap">
+            <button
+              type="button"
+              className={`schedule-filter-btn${filterTeacherIds.size > 0 ? ' active' : ''}`}
+              onClick={() => setDropOpen((o) => !o)}
+            >
+              {filterTeacherIds.size === 0
+                ? 'All teachers'
+                : filterTeacherIds.size === 1
+                  ? filterTeacherIds.has(UNASSIGNED)
+                    ? 'Unassigned'
+                    : (teachers.find((t) => filterTeacherIds.has(t.id))?.name ?? 'Teacher')
+                  : `${filterTeacherIds.size} selected`}
+              <span className="filter-caret">▾</span>
+            </button>
+            {dropOpen && (
+              <div className="filter-dropdown" onMouseDown={(e) => e.stopPropagation()}>
+                {filterTeacherIds.size > 0 && (
+                  <button type="button" className="filter-dropdown-clear" onClick={() => setFilterTeacherIds(new Set())}>
+                    Clear selection
+                  </button>
+                )}
+                <label className="filter-dropdown-item">
+                  <input
+                    type="checkbox"
+                    checked={filterTeacherIds.has(UNASSIGNED)}
+                    onChange={(e) => setFilterTeacherIds((prev) => {
+                      const next = new Set(prev)
+                      e.target.checked ? next.add(UNASSIGNED) : next.delete(UNASSIGNED)
+                      return next
+                    })}
+                  />
+                  <span className="filter-color-dot" style={{ background: '#ccc' }} />
+                  Unassigned
+                </label>
+                <div style={{ borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />
+                {teachers.map((t) => (
+                  <label key={t.id} className="filter-dropdown-item">
+                    <input
+                      type="checkbox"
+                      checked={filterTeacherIds.has(t.id)}
+                      onChange={(e) => setFilterTeacherIds((prev) => {
+                        const next = new Set(prev)
+                        e.target.checked ? next.add(t.id) : next.delete(t.id)
+                        return next
+                      })}
+                    />
+                    <span className="filter-color-dot" style={{ background: t.color || '#888' }} />
+                    {t.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          <button className="btn btn-primary" onClick={() => setModal('add')}>
+            + Add Class
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 0 }}>
+        {classes.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🎓</div>
+            <p>No classes yet. Create a class and assign a teacher and room.</p>
+            <button className="btn btn-primary" onClick={() => setModal('add')}>+ Add Class</button>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <SortTh col="name">Class</SortTh>
+                <SortTh col="schedule">Day & Time</SortTh>
+                <SortTh col="teacher">Teacher</SortTh>
+                <SortTh col="room">Room</SortTh>
+                <SortTh col="students">Students</SortTh>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((c) => {
+                const room = rooms.find((r) => r.id === c.roomId)
+                const capacity = room?.capacity
+                const enrolled = c.enrolledStudentIds.length
+                const atCapacity = capacity && enrolled >= capacity
+                const hasConflict = conflictIds.has(c.id)
+                const endTime = c.startTime ? addMinutes(c.startTime, c.durationMinutes) : null
+
+                return (
+                  <tr key={c.id}>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{c.name}</div>
+                      {c.style && <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{c.style}</div>}
+                      {hasConflict && <span className="badge badge-conflict" style={{ marginTop: 4 }}>Conflict</span>}
+                    </td>
+                    <td>
+                      {c.dayOfWeek && endTime ? (
+                        <>
+                          {c.dayOfWeek}<br />
+                          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                            {formatTime(c.startTime)} – {formatTime(endTime)}
+                          </span>
+                        </>
+                      ) : (
+                        <em style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Unscheduled</em>
+                      )}
+                    </td>
+                    <td>{getTeacher(c.teacherId)}</td>
+                    <td>{getRoom(c.roomId)}</td>
+                    <td>
+                      <span style={{ color: atCapacity ? 'var(--color-danger)' : 'inherit', fontWeight: atCapacity ? 600 : 400 }}>
+                        {enrolled}{capacity ? `/${capacity}` : ''}
+                      </span>
+                      {' '}
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ marginLeft: 4 }}
+                        onClick={() => setEnrollClass(c)}
+                      >
+                        Manage
+                      </button>
+                    </td>
+                    <td>
+                      <div className="table-actions">
+                        <button className="btn btn-ghost btn-sm" onClick={() => setModal(c)}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => setConfirmId(c.id)}>Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {modal && (
+        <Modal
+          title={modal === 'add' ? 'Add Class' : 'Edit Class'}
+          onClose={() => setModal(null)}
+          size="lg"
+        >
+          <ClassForm
+            initial={modal === 'add' ? null : modal}
+            teachers={teachers}
+            rooms={rooms}
+            allClasses={classes}
+            onSave={handleSave}
+            onClose={() => setModal(null)}
+          />
+        </Modal>
+      )}
+
+      {enrollClass && (
+        <EnrollmentPanel
+          cls={enrollClass}
+          students={students}
+          rooms={rooms}
+          classCrud={classCrud}
+          onClose={() => setEnrollClass(null)}
+        />
+      )}
+
+      {confirmId && (
+        <ConfirmDialog
+          message="Delete this class? All enrollments will be lost."
+          onConfirm={() => { classCrud.remove(confirmId); setConfirmId(null) }}
+          onCancel={() => setConfirmId(null)}
+        />
+      )}
+    </div>
+  )
+}
