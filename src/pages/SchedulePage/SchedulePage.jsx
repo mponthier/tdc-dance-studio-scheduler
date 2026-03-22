@@ -5,6 +5,7 @@ import { DAYS, GRID_START_HOUR, GRID_START_MIN, TOTAL_SLOTS, SLOT_MINUTES, durat
 import { findAllConflictingIds } from '../../utils/conflicts'
 import { isWithinAvailability } from '../../utils/availability'
 import { optimizeSchedule } from '../../utils/optimizer'
+import { optimizeWithCPSAT } from '../../utils/optimizerCPSAT'
 import { exportScheduleToExcel } from '../../utils/exportSchedule'
 import { exportScheduleToPDF } from '../../utils/exportPDF'
 import Modal from '../../components/Modal'
@@ -184,6 +185,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   const gridRef = useRef(null)
   const [selected, setSelected]           = useState(null)
   const [optimizeResult, setOptimizeResult] = useState(null)
+  const [optimizing, setOptimizing] = useState(false)
   const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
   const [filterRoomIds, setFilterRoomIds]       = useState(new Set())
   const [teacherDropOpen, setTeacherDropOpen]   = useState(false)
@@ -194,6 +196,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   const [contextMenu, setContextMenu]     = useState(null) // { cls, x, y }
   const [confirmCls, setConfirmCls]       = useState(null)
   const [confirmClear, setConfirmClear]   = useState(false)
+  const [confirmAutoSchedule, setConfirmAutoSchedule] = useState(false)
   const [teacherPickerDrop, setTeacherPickerDrop] = useState(null)
   const [colorMode, setColorMode]         = useState('teacher') // 'teacher' | 'skillLevel'
   const [filterSkillLevels, setFilterSkillLevels] = useState(new Set())
@@ -268,15 +271,41 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
     setOptimizeResult(null)
   }
 
-  function handleOptimize() {
-    const updated = optimizeSchedule(classes, teachers, rooms)
-    classCrud.updateMany(updated)
-    const updatedIds  = new Set(updated.map((c) => c.id))
-    const failedNames = classes
-      .filter((c) => !c.dayOfWeek || !c.startTime)
-      .filter((c) => !updatedIds.has(c.id))
-      .map((c) => c.name)
-    setOptimizeResult({ scheduled: updated.length, failedNames })
+  async function handleAutoSchedule() {
+    setOptimizing(true)
+    setOptimizeResult(null)
+    const t0 = Date.now()
+    try {
+      let scheduled, unscheduledIds, usedFallback = false
+      try {
+        const result = await optimizeWithCPSAT(classes, teachers, rooms)
+        scheduled = result.scheduled
+        unscheduledIds = result.unscheduledIds
+      } catch (err) {
+        // Backend unavailable — fall back to greedy
+        console.warn('CP-SAT backend error, falling back to greedy:', err)
+        usedFallback = true
+        const updated = optimizeSchedule(classes, teachers, rooms)
+        scheduled = updated
+        unscheduledIds = classes
+          .filter((c) => (!c.dayOfWeek || !c.startTime) && !updated.find((u) => u.id === c.id))
+          .map((c) => c.id)
+      }
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
+      if (scheduled.length > 0) classCrud.updateMany(scheduled)
+      const unscheduledNames = unscheduledIds
+        .map((id) => classes.find((c) => c.id === id)?.name)
+        .filter(Boolean)
+      const solver = usedFallback ? 'greedy fallback' : 'CP-SAT'
+      setOptimizeResult({
+        count: scheduled.length,
+        unscheduled: unscheduledNames,
+        solver,
+        elapsed,
+      })
+    } finally {
+      setOptimizing(false)
+    }
   }
 
   function handleContextMenu(e, cls) {
@@ -359,7 +388,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
 
 
   return (
-    <div className="schedule-page">
+    <div className="schedule-page" style={optimizing ? { cursor: 'wait' } : undefined}>
       <div className="schedule-header">
         <h1>Weekly Schedule</h1>
         {hasAnyClasses && (
@@ -489,8 +518,8 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
             <button className="btn btn-primary" onClick={() => setConfirmClear(true)} disabled={scheduledClasses.length === 0}>
               Clear Schedule
             </button>
-            <button className="btn btn-primary" onClick={handleOptimize} disabled={classes.length === 0}>
-              Auto Schedule
+            <button className="btn btn-primary" onClick={() => setConfirmAutoSchedule(true)} disabled={optimizing || classes.length === 0}>
+              {optimizing ? 'Scheduling…' : 'Auto Schedule'}
             </button>
           </div>
         )}
@@ -663,10 +692,11 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
       {optimizeResult && (
         <div className="optimize-messages">
           <span>
-            {optimizeResult.scheduled > 0
-              ? `Scheduled ${optimizeResult.scheduled} class${optimizeResult.scheduled !== 1 ? 'es' : ''}.`
+            {optimizeResult.count > 0
+              ? `Scheduled ${optimizeResult.count} class${optimizeResult.count !== 1 ? 'es' : ''}.`
               : 'No classes could be scheduled.'}
-            {optimizeResult.failedNames.length > 0 && ` Could not place: ${optimizeResult.failedNames.join(', ')}.`}
+            {optimizeResult.unscheduled.length > 0 && ` Could not place: ${optimizeResult.unscheduled.join(', ')}.`}
+            {` (${optimizeResult.solver}, ${optimizeResult.elapsed}s)`}
           </span>
           <button className="btn btn-ghost btn-sm" onClick={() => setOptimizeResult(null)}>Clear</button>
         </div>
@@ -685,6 +715,16 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
             Unschedule class
           </button>
         </div>
+      )}
+
+      {confirmAutoSchedule && (
+        <ConfirmDialog
+          title="Auto Schedule"
+          message="Auto scheduling may take up to 2 minutes to complete. Proceed?"
+          confirmLabel="Schedule"
+          onConfirm={() => { setConfirmAutoSchedule(false); handleAutoSchedule() }}
+          onCancel={() => setConfirmAutoSchedule(false)}
+        />
       )}
 
       {confirmClear && (

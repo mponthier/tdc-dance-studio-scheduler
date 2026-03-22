@@ -1,3 +1,8 @@
+[style*="cursor: wait"],
+[style*="cursor: wait"] * {
+  cursor: wait !important;
+}
+
 .schedule-header {
   display: flex;
   align-items: center;
@@ -508,7 +513,7 @@
 }
 
 .grid-slot.slot-unavailable {
-  background: #ff4444 !important;
+  background: #b0b0b0 !important;
   cursor: not-allowed;
   display: flex;
   align-items: center;

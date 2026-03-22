@@ -8,7 +8,8 @@
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\mpont\\\\AppData\\\\Local\\\\Temp\\\\setup_node.ps1\")",
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\mpont\\\\AppData\\\\Local\\\\Temp\\\\npm_install.ps1\")",
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\mpont\\\\AppData\\\\Local\\\\Temp\\\\vite_build.ps1\")",
-      "Bash(powershell.exe -Command \"Start-Process ''chrome'' -ArgumentList ''http://localhost:5173''\")"
+      "Bash(powershell.exe -Command \"Start-Process ''chrome'' -ArgumentList ''http://localhost:5173''\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -Command \"Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Get-Process | Stop-Process -Force\")"
     ]
   }
 }

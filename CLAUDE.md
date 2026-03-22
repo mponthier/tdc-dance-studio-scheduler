@@ -53,7 +53,8 @@ Then refresh the page.
 | `src/utils/conflicts.js` | `detectConflicts(candidate, allClasses)` — used in `ClassForm` for real-time warnings. `findAllConflictingIds(allClasses)` — O(n²) scan used for conflict badges on the Classes list and `ClassBlock` tinting. |
 | `src/utils/availability.js` | `isWithinAvailability(availability, dayOfWeek, startTime, durationMinutes)` — returns true if the class fits inside an availability window. Applies a **1-minute inset**: checks `classStart+1` through `classEnd-1`, so a class can start/end exactly at an availability boundary. `detectAvailabilityWarnings(candidate, teacher, room)` — called alongside `detectConflicts` in `ClassForm`. |
 | `src/utils/timeHelpers.js` | Grid positioning math: `timeToRow`, `durationToRowSpan`. Constants: `DAYS`, `GRID_START_HOUR` (15), `GRID_START_MIN` (30), `GRID_END_HOUR` (21), `GRID_END_MIN` (30), `SLOT_MINUTES` (15), `TOTAL_SLOTS` (24). |
-| `src/utils/optimizer.js` | `optimizeSchedule(classes, teachers, rooms) → updatedClasses[]` — greedy scheduler that assigns day/time/room/teacher to unscheduled classes. Sorts by duration descending. If a class already has a `teacherId` whose specialty doesn't match the class genre, the class is skipped entirely. If a class already has a `roomId`, that room is tried first. If no teacher is assigned, finds the first eligible teacher (by genre/specialty) who is available and conflict-free at the chosen slot. Two classes with the same non-empty `skillLevel` are never placed in overlapping time slots. Returns only newly scheduled classes. |
+| `src/utils/optimizer.js` | `optimizeSchedule(classes, teachers, rooms) → updatedClasses[]` — greedy scheduler (fallback). Sorts by duration descending. If a class already has a `teacherId` whose specialty doesn't match the class genre, the class is skipped entirely. If a class already has a `roomId`, that room is tried first. If no teacher is assigned, finds the first eligible teacher (by genre/specialty) who is available and conflict-free at the chosen slot. Two classes with the same non-empty `skillLevel` are never placed in overlapping time slots. Returns only newly scheduled classes. |
+| `src/utils/optimizerCPSAT.js` | `optimizeWithCPSAT(classes, teachers, rooms)` — POSTs to the CP-SAT backend (`http://localhost:8000/api/optimize`), merges results back onto class objects. 120s fetch timeout. `isCPSATAvailable()` — 2s health probe. |
 | `src/utils/exportSchedule.js` | `exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms)` — ExcelJS-based export that mirrors the room-subdivided weekly grid. |
 | `src/utils/exportPDF.js` | `exportScheduleToPDF(gridElement)` — html2canvas + jsPDF export. Captures the inner `.weekly-grid` element (not the overflow wrapper) to avoid clipping. Uses a custom page size wide enough to fit the full grid aspect ratio. |
 
@@ -101,13 +102,13 @@ CSS Grid: time label column + variable data columns (per-day room counts), 2 hea
 
 **Per-day room columns:** Each day shows only the rooms that have availability on that day (`isRoomAvailableOnDay` helper). Days with no available rooms render no columns. Column layout uses cumulative offsets (`dayColStart` map) rather than a fixed `numRooms * dayIdx` formula. `getCol(day, ri)` returns the CSS grid column for a given day name and room index within that day's available rooms.
 
-**Unavailable slots:** Slots outside a room's availability window are rendered in bright red (`#ff4444`, CSS class `.slot-unavailable`) with an "N/A" label. `isRoomSlotAvailable(room, day, slotIndex)` uses strict `>` for the end-time check (slot at exactly `endTime` is red). Drag-over/drop validation uses `isWithinAvailability` only — not `isRoomSlotAvailable` — so the full class duration is checked, not just the start slot.
+**Unavailable slots:** Slots outside a room's availability window are rendered in medium grey (`#b0b0b0`, CSS class `.slot-unavailable`) with a white italic "N/A" label. `isRoomSlotAvailable(room, day, slotIndex)` uses strict `>` for the end-time check (slot at exactly `endTime` is grey). Drag-over/drop validation uses `isWithinAvailability` only — not `isRoomSlotAvailable` — so the full class duration is checked, not just the start slot.
 
 **Lane-based overlap layout:** `RoomColumn` component (`position: relative`, `pointer-events: none`) spans all time rows for its (day, room) column. Class blocks inside are `position: absolute` with top/height computed from `slotHeight`. `assignLanes()` groups overlapping classes into side-by-side lanes. Class blocks have `pointer-events: auto`.
 
 **Day visual distinction:** All slot cells are white (no alternating tint between days). Thick solid left border (`border-left: 2px solid`) on the first room column of each day. Day headers: even = `#500000` (deep maroon), odd = `#732f2f` (lighter maroon), both with white text. Room sub-headers: even = `#f9f0f0`, odd = `#ede8e8`. These colors match the Excel export exactly.
 
-**Hour delineation:** Slots at hour boundaries (4:00pm, 5:00pm, …) receive `.hour-boundary` class, styled with `border-top: 1px dashed #b0a0a0` across both slot cells and the time label column. Time labels are shown every 30 minutes (every 2 slots) in consistent `H:MMpm` format (e.g. `4:00pm`, `4:30pm`). Excel export mirrors this with dashed `#B0A0A0` top borders at hour rows and solid medium borders for day delineation.
+**Hour delineation:** Slots at hour boundaries (4:00pm, 5:00pm, …) receive `.hour-boundary` class, styled with `border-top: 1px dashed #b0a0a0` across both slot cells and the time label column. Time labels are shown every 30 minutes (every 2 slots) in consistent `H:MMpm` format (e.g. `4:00pm`, `4:30pm`). Excel export mirrors this using a **dashed black `bottom` border on the cell immediately before each hour boundary** (not a `top` border on the hour cell itself) — this is required because Excel resolves shared cell edges by the heavier style, and a solid `thin` bottom from the preceding cell would override a `dashed` top on the hour cell.
 
 **Day visibility toggles:** Row of day chips above the grid. Only days where at least one room has availability are shown (`daysWithRooms = DAYS.filter(...)`). Active days = filled maroon buttons; clicking a day hides its columns. Managed via `hiddenDays` Set in state. `visibleDays` is derived from `daysWithRooms` (not all `DAYS`) so the grid and toggles stay consistent.
 
@@ -127,7 +128,7 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 **Teacher, room & skill level filters:** Multi-select dropdown panels in the page header. Each filter is a button that opens a checkbox list. The button label shows "All …" when nothing is selected, the item name when exactly one is selected, or "N …" for multiple. A "Clear selection" link appears inside the dropdown when any items are chosen. Clicking outside closes any open dropdown. Room filter also controls which room sub-columns are rendered (`visibleRooms`). State: `filterTeacherIds`, `filterRoomIds`, and `filterSkillLevels` are `Set` objects. Skill level filter matches on `c.skillLevel || ''`.
 
-**Auto Schedule button:** Calls `optimizeSchedule` (unscheduled classes only), then `classCrud.updateMany(updated)`. Shows inline result message with scheduled count and names of any that could not be placed.
+**Auto Schedule button:** Clicking opens a `ConfirmDialog` ("Auto scheduling may take up to 2 minutes to complete. Proceed?", confirm label "Schedule") before running. Async. Tries the CP-SAT backend first (`optimizeWithCPSAT`); if unavailable or timed out (120s), falls back to the greedy `optimizeSchedule`. Shows a `cursor: wait` on the page while running ("Scheduling…" button label). Result message shows count, solver used (`CP-SAT` or `greedy fallback`), and elapsed time in seconds. Any backend error is logged to the browser console (`console.warn`).
 
 **Clear Schedule button:** Opens a `ConfirmDialog` (title "Confirm Clear", confirm label "Clear") before resetting all classes to `dayOfWeek: '', startTime: '', roomId: '', teacherId: ''`.
 
@@ -147,7 +148,7 @@ Both functions check teacher availability via `isWithinAvailability` (full class
 
 **Class detail panel:** Left-clicking a class block opens `ClassDetailPanel` — a read-only overlay (`.detail-overlay`) showing the class name, genre, day, time range, duration, teacher, room, and enrolled students list. Clicking outside the panel or the × button closes it.
 
-**Optimize result message:** Shown below the grid after Auto Schedule. Persists until dismissed with a Clear button.
+**Optimize result message:** Shown below the grid after Auto Schedule. Format: `"Scheduled N classes. (CP-SAT, 3.2s)"` or `"(greedy fallback, 0.1s)"`. Persists until dismissed with a Clear button.
 
 `ClassBlock` displays class name, teacher name, and skill level (room is omitted — it's already shown as the column header). Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip matches the same three fields. Block coloring is controlled by `colorMode` (see Color mode toggle above).
 
@@ -157,8 +158,8 @@ Uses ExcelJS. Mirrors the room-subdivided weekly grid exactly, with per-day room
 
 - **Row 1:** Corner cell (spans 2 rows) + day headers merged across that day's available room sub-columns. Even days `#500000`, odd days `#732F2F`, white bold text. Days with no available rooms are omitted entirely.
 - **Row 2:** Room sub-headers (only rooms available on that day). Even days `#F9F0F0`, odd days `#EDE8E8`.
-- **Rows 3+:** 24 time slot rows at 24pt height. All available slots white (`#FFFFFF`). Unavailable slots (outside room availability): solid `#FF4444`. Time label in column 1 every 30 minutes in `H:MM AM/PM` format. Hour-boundary rows have a dashed `#B0A0A0` top border; day-start columns have a solid medium left border.
-- **Class blocks:** Merged cells spanning slot rows, teacher color lightened 78% for fill, full color for font/border. Displays class name + `"Teacher · Room"` (no time range). `try/catch` around `mergeCells` handles overlapping classes gracefully.
+- **Rows 3+:** 24 time slot rows at 24pt height. All available slots white (`#FFFFFF`). Unavailable slots (outside room availability): solid medium grey `#B0B0B0` fill with white italic "N/A" text centered. Time label in column 1 every 30 minutes in `H:MM AM/PM` format. The cell immediately before each hour boundary has a dashed black `bottom` border (not a `top` on the hour cell — see Hour delineation note above). Day-start columns have a solid medium left border. Thick medium black outer border on all four edges of the full grid.
+- **Class blocks:** Merged cells spanning slot rows, teacher color lightened 78% for fill, full color for font/border. Displays class name, teacher name, and skill level (matching the weekly schedule UI — same three fields as `ClassBlock`). `try/catch` around `mergeCells` handles overlapping classes gracefully.
 - **Sheet 2:** Unscheduled classes as a styled flat list.
 - Uses `dayColStart` map and `getCol(day, ri)` for per-day column offsets (days can have different room counts).
 - Local constants: `GRID_START_HOUR = 15`, `GRID_START_MIN = 30`, `SLOT_MINUTES = 15`, `TOTAL_SLOTS = 24`. `timeToSlot` accounts for the `:30` start offset.
@@ -173,7 +174,29 @@ Uses html2canvas + jsPDF.
 - Page size: at minimum A4 landscape (297×210mm); expands width proportionally if the grid aspect ratio requires it.
 - Title ("The Dance Collective McKinney — Weekly Schedule") and generation date printed above the grid image.
 - Grid image scaled with `Math.min(scaleByW, scaleByH)` to fit within available area.
-- Unavailable slots render as solid `#FF4444` (CSS background-color), which html2canvas captures reliably. Do not use CSS gradients or patterns for unavailability — html2canvas does not render `repeating-linear-gradient` consistently.
+- Unavailable slots render as solid `#B0B0B0` medium grey (CSS background-color), which html2canvas captures reliably. Do not use CSS gradients or patterns for unavailability — html2canvas does not render `repeating-linear-gradient` consistently.
+
+### CP-SAT scheduling backend (`backend/`)
+
+Optional Python FastAPI backend that replaces the greedy optimizer with OR-Tools CP-SAT. The frontend falls back to greedy automatically if the backend is unreachable.
+
+**Setup & run:**
+```bash
+cd backend
+py -3 -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --port 8000
+```
+
+**Files:**
+- `backend/main.py` — FastAPI app. CORS allows `localhost:5173` and `localhost:5174`. Custom HTTP middleware adds `Access-Control-Allow-Private-Network: true` to all responses (required by Chrome for cross-port localhost requests). Endpoints: `POST /api/optimize`, `GET /api/health`.
+- `backend/solver.py` — CP-SAT model. Enumerates all feasible (class, day, start, room, teacher) assignments filtered by availability (1-minute inset) and specialty. Uses **optional interval variables + `AddNoOverlap`** for room, teacher, and skill-level conflict constraints (much more efficient than pairwise). Pre-filters assignments that conflict with already-scheduled classes. Objective: maximize classes scheduled (primary, weighted by `BIG_M`) + prefer earlier days in the week Monday→Sunday (secondary). Solver time limit: 115s.
+- `backend/requirements.txt` — fastapi, uvicorn[standard], ortools, pydantic.
+
+**Timeouts:** Frontend fetch timeout = 120s. Solver time limit = 115s (5s buffer). If the fetch times out or the backend is unreachable, `handleAutoSchedule` catches the error and falls back to greedy.
+
+**Chrome Private Network Access:** When the React app at `localhost:5173` fetches `localhost:8000`, Chrome enforces a preflight check requiring `Access-Control-Allow-Private-Network: true`. This is handled by the HTTP middleware in `main.py` — do not remove it.
 
 ### Tables (Classes, Students, Teachers, Rooms pages)
 

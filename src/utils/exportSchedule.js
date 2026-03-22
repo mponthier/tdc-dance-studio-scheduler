@@ -141,9 +141,9 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
       cell.font  = { bold: true, color: { argb: isOdd ? 'FF5A3535' : 'FF500000' }, size: 9 }
       cell.alignment = { horizontal: 'center', vertical: 'middle' }
       cell.border = {
-        left:   (ri === 0 && isDayStart) ? { style: 'medium', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFFF4444' } },
-        right:  { style: 'thin', color: { argb: 'FFFF4444' } },
-        bottom: { style: 'medium', color: { argb: 'FFB0A0A0' } },
+        left:   (ri === 0 && isDayStart) ? { style: 'medium', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFE0E0E0' } },
+        right:  { style: 'thin', color: { argb: 'FFE0E0E0' } },
+        bottom: { style: 'medium', color: { argb: 'FFC0B0B0' } },
       }
     })
   })
@@ -152,8 +152,12 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
   for (let slot = 0; slot < TOTAL_SLOTS; slot++) {
     const rowNum = slot + 3
     ws.getRow(rowNum).height = 24
-    const isHourBoundary = (GRID_START_MIN + slot * SLOT_MINUTES) % 60 === 0
-    const is30min        = slot % 2 === 0  // label rows (every 30 min)
+    // pre-hour-boundary: the NEXT slot starts a new hour → draw dashed black on this cell's bottom
+    const nextIsHour = (GRID_START_MIN + (slot + 1) * SLOT_MINUTES) % 60 === 0
+
+    const hourBorder   = { style: 'dashed', color: { argb: 'FF000000' } }
+    const slotBorder   = { style: 'thin',   color: { argb: 'FFF0EFE8' } }
+    const bottomBorder = nextIsHour ? hourBorder : slotBorder
 
     // Time label
     const timeCell = ws.getCell(rowNum, 1)
@@ -162,9 +166,8 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
     timeCell.alignment = { horizontal: 'right', vertical: 'top' }
     timeCell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: TIME_COL_BG } }
     timeCell.border = {
-      top:    isHourBoundary ? { style: 'dashed', color: { argb: 'FFB0A0A0' } } : undefined,
-      right:  { style: 'thin', color: { argb: 'FFFF4444' } },
-      bottom: { style: 'thin', color: { argb: is30min ? 'FFFF4444' : 'FFF0EFE8' } },
+      right:  { style: 'thin', color: { argb: 'FFE0E0E0' } },
+      bottom: bottomBorder,
     }
 
     // Slot cells per day × room
@@ -174,12 +177,16 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
         const col  = getCol(day, ri)
         const cell = ws.getCell(rowNum, col)
         const unavailable = !isRoomSlotAvailable(room, day, slot)
-        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: unavailable ? 'FFFF4444' : SLOT_EVEN } }
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: unavailable ? 'FFB0B0B0' : SLOT_EVEN } }
+        if (unavailable) {
+          cell.value     = 'N/A'
+          cell.font      = { size: 8, color: { argb: 'FFFFFFFF' }, italic: true }
+          cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        }
         cell.border = {
-          top:    isHourBoundary ? { style: 'dashed', color: { argb: 'FFB0A0A0' } } : undefined,
           left:   (ri === 0 && isDayStart) ? { style: 'medium', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFE8E8E8' } },
           right:  { style: 'thin', color: { argb: 'FFE8E8E8' } },
-          bottom: { style: 'thin', color: { argb: is30min ? 'FFFF4444' : 'FFF0EFE8' } },
+          bottom: bottomBorder,
         }
       })
     })
@@ -214,8 +221,7 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
       } catch (_) { /* conflict — render without merge */ }
 
       const cell = ws.getCell(rowStart, col)
-      const teacherRoom = [teacher?.name, room?.name].filter(Boolean).join(' · ')
-      cell.value     = [cls.name, teacherRoom].filter(Boolean).join('\n')
+      cell.value     = [cls.name, teacher?.name, cls.skillLevel].filter(Boolean).join('\n')
       cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } }
       cell.font      = { size: 10, color: { argb: fgArgb }, bold: true }
       cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true }
@@ -262,6 +268,24 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
         cell.border = { bottom: { style: 'thin', color: { argb: 'FFDDDDDD' } } }
       })
     })
+  }
+
+  // ── Thick outer border around the entire grid ──────────────────────────────
+  const THICK = { style: 'medium', color: { argb: 'FF000000' } }
+  const totalRows = 2 + TOTAL_SLOTS
+  const totalCols = 1 + visibleDays.reduce((sum, day) => sum + (roomsByDay[day]?.length ?? 0), 0)
+
+  for (let c = 1; c <= totalCols; c++) {
+    const top    = ws.getCell(1,         c)
+    const bottom = ws.getCell(totalRows, c)
+    top.border    = { ...top.border,    top:    THICK }
+    bottom.border = { ...bottom.border, bottom: THICK }
+  }
+  for (let r = 1; r <= totalRows; r++) {
+    const left  = ws.getCell(r, 1)
+    const right = ws.getCell(r, totalCols)
+    left.border  = { ...left.border,  left:  THICK }
+    right.border = { ...right.border, right: THICK }
   }
 
   // ── Download ───────────────────────────────────────────────────────────────
