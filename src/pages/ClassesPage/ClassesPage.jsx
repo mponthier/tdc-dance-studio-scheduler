@@ -33,6 +33,8 @@ function sortClasses(classes, key, dir, teachers, rooms) {
       bv = (rooms.find((r) => r.id === b.roomId)?.name || '').toLowerCase()
     } else if (key === 'skillLevel') {
       av = (a.skillLevel || '').toLowerCase(); bv = (b.skillLevel || '').toLowerCase()
+    } else if (key === 'duration') {
+      av = a.durationMinutes; bv = b.durationMinutes
     } else if (key === 'students') {
       av = a.enrolledStudentIds.length; bv = b.enrolledStudentIds.length
     }
@@ -48,15 +50,17 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
   const [sortDir, setSortDir] = useState('asc')
   const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
   const [filterSkillLevels, setFilterSkillLevels] = useState(new Set())
+  const [filterDurations, setFilterDurations] = useState(new Set())
   const [dropOpen, setDropOpen] = useState(false)
   const [skillDropOpen, setSkillDropOpen] = useState(false)
+  const [durationDropOpen, setDurationDropOpen] = useState(false)
 
   useEffect(() => {
-    if (!dropOpen && !skillDropOpen) return
-    function close() { setDropOpen(false); setSkillDropOpen(false) }
+    if (!dropOpen && !skillDropOpen && !durationDropOpen) return
+    function close() { setDropOpen(false); setSkillDropOpen(false); setDurationDropOpen(false) }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
-  }, [dropOpen, skillDropOpen])
+  }, [dropOpen, skillDropOpen, durationDropOpen])
 
   const conflictIds = findAllConflictingIds(classes)
 
@@ -90,12 +94,15 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
     )
   }
 
+  const allDurations = [...new Set(classes.map((c) => c.durationMinutes))].sort((a, b) => a - b)
+
   const filtered = classes.filter((c) => {
     if (filterTeacherIds.size > 0) {
       if (!c.teacherId && filterTeacherIds.has(UNASSIGNED)) { /* pass */ }
       else if (!filterTeacherIds.has(c.teacherId)) return false
     }
     if (filterSkillLevels.size > 0 && !filterSkillLevels.has(c.skillLevel || '')) return false
+    if (filterDurations.size > 0 && !filterDurations.has(c.durationMinutes)) return false
     return true
   })
   const sorted = sortClasses(filtered, sortKey, sortDir, teachers, rooms)
@@ -109,7 +116,7 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
             <button
               type="button"
               className={`schedule-filter-btn${filterSkillLevels.size > 0 ? ' active' : ''}`}
-              onClick={() => { setSkillDropOpen((o) => !o); setDropOpen(false) }}
+              onClick={() => { setSkillDropOpen((o) => !o); setDropOpen(false); setDurationDropOpen(false) }}
             >
               {filterSkillLevels.size === 0
                 ? 'All skill levels'
@@ -145,8 +152,45 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
           <div className="filter-dropdown-wrap">
             <button
               type="button"
+              className={`schedule-filter-btn${filterDurations.size > 0 ? ' active' : ''}`}
+              onClick={() => { setDurationDropOpen((o) => !o); setDropOpen(false); setSkillDropOpen(false) }}
+            >
+              {filterDurations.size === 0
+                ? 'All durations'
+                : filterDurations.size === 1
+                  ? `${[...filterDurations][0]} min`
+                  : `${filterDurations.size} durations`}
+              <span className="filter-caret">▾</span>
+            </button>
+            {durationDropOpen && (
+              <div className="filter-dropdown" onMouseDown={(e) => e.stopPropagation()}>
+                {filterDurations.size > 0 && (
+                  <button type="button" className="filter-dropdown-clear" onClick={() => setFilterDurations(new Set())}>
+                    Clear selection
+                  </button>
+                )}
+                {allDurations.map((m) => (
+                  <label key={m} className="filter-dropdown-item">
+                    <input
+                      type="checkbox"
+                      checked={filterDurations.has(m)}
+                      onChange={(e) => setFilterDurations((prev) => {
+                        const next = new Set(prev)
+                        e.target.checked ? next.add(m) : next.delete(m)
+                        return next
+                      })}
+                    />
+                    {m} min
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="filter-dropdown-wrap">
+            <button
+              type="button"
               className={`schedule-filter-btn${filterTeacherIds.size > 0 ? ' active' : ''}`}
-              onClick={() => { setDropOpen((o) => !o); setSkillDropOpen(false) }}
+              onClick={() => { setDropOpen((o) => !o); setSkillDropOpen(false); setDurationDropOpen(false) }}
             >
               {filterTeacherIds.size === 0
                 ? 'All teachers'
@@ -218,6 +262,7 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
                 <SortTh col="teacher">Teacher</SortTh>
                 <SortTh col="schedule">Day & Time</SortTh>
                 <SortTh col="room">Room</SortTh>
+                <SortTh col="duration">Duration</SortTh>
                 <SortTh col="students">Students</SortTh>
                 <th></th>
               </tr>
@@ -257,6 +302,7 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
                       )}
                     </td>
                     <td>{getRoom(c.roomId)}</td>
+                    <td>{c.durationMinutes} min</td>
                     <td>
                       <span style={{ color: atCapacity ? 'var(--color-danger)' : 'inherit', fontWeight: atCapacity ? 600 : 400 }}>
                         {enrolled}{capacity ? `/${capacity}` : ''}

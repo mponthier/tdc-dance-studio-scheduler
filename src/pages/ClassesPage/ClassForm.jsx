@@ -161,14 +161,14 @@ export default function ClassForm({ initial, teachers, rooms, allClasses, onSave
 
         <div className="form-group">
           <label>Duration (minutes)</label>
-          <input
-            type="number"
+          <select
             value={form.durationMinutes}
             onChange={(e) => set('durationMinutes', e.target.value)}
-            min="15"
-            max="480"
-            step="15"
-          />
+          >
+            {[30, 45, 60, 75, 90, 105, 120].map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
         </div>
       </div>
       <div className="modal-footer">

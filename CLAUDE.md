@@ -83,7 +83,7 @@ Then refresh the page.
 - **Teachers (6):** Suzan Ponthier (`#0984e3` blue), Mark Ponthier (`#6c5ce7` purple), Virginia Nuckolls (`#00b894` green), Julia Ponthier (`#e17055` coral), Jake Ponthier (`#d63031` red), Doc Nuckolls (`#fd79a8` pink) — specialties span all 10 genres (see below)
 - **Rooms:** Tots, Pink, Green, Blue — capacity 25 each
 - **Availability (teachers & rooms):** Mon–Fri, 3:30pm–9:30pm
-- **Classes:** 30 classes across all 10 genres, seeded with **no teacher, no day/time, no room** assigned. Each class has a `skillLevel` pre-assigned (`BI6` = Beg/Int (6-10), `BI10` = Beg/Int (10+), `IA6` = Int/Adv (6-10), `IA10` = Int/Adv (10+)).
+- **Classes:** 30 classes across all 10 genres, seeded with **no teacher, no day/time, no room** assigned. Each class has a `skillLevel` pre-assigned (`BI6` = Beg/Int (6-10), `BI10` = Beg/Int (10+), `IA6` = Int/Adv (6-10), `IA10` = Int/Adv (10+)). Duration distribution: 15 classes at 60 min; remaining 15 evenly distributed across 30 min (3), 45 min (2), 75 min (2), 90 min (3), 105 min (2), 120 min (3). Mini/young classes → 30 min; beginners → 45 min; mid-advanced → 75 min; teen/team → 90 min; advanced technique → 105 min; top-level advanced → 120 min.
 - **Students:** one per skill level — Emma Johnson (Beg/Int 10+), Liam Park (Int/Adv 10+), Sofia Rivera (Int/Adv 10+), Noah Chen (Beg/Int 6-10), Olivia Williams (Int/Adv 10+), Ava Martinez (Int/Adv 6-10)
 - **Phone format:** `xxx-xxx-xxxx`
 
@@ -202,7 +202,7 @@ uvicorn main:app --port 8000
 
 All tables support sortable columns via `sortKey`/`sortDir` state and a `SortTh` component that renders a clickable header with ▲/▼ indicators.
 
-- **Classes:** columns are Class, Skill Level, Teacher, Day & Time, Room, Students (in that order). Sortable by all columns. Two multi-select filters: teacher (includes "Unassigned" sentinel `'__unassigned__'`) and skill level. State: `filterTeacherIds` (Set), `filterSkillLevels` (Set). Skill level displayed as a color-coded badge using `SKILL_BADGE` (same mapping as Students page).
+- **Classes:** columns are Class, Skill Level, Teacher, Day & Time, Room, Duration, Students (in that order). Sortable by all columns. Three multi-select filters: skill level, duration, and teacher (teacher includes "Unassigned" sentinel `'__unassigned__'`). State: `filterTeacherIds` (Set), `filterSkillLevels` (Set), `filterDurations` (Set). Duration filter options are derived dynamically from the current class data (sorted ascending). Skill level displayed as a color-coded badge using `SKILL_BADGE` (same mapping as Students page). Duration field in ClassForm is a `<select>` restricted to 15-minute increments between 30 and 120 minutes (30, 45, 60, 75, 90, 105, 120).
 - **Students:** sortable by all columns; skill level filter is a multi-select dropdown (checkbox list). State: `filterSkills` (Set).
 - **Teachers:** sortable by Name, Genre, Phone, Email, Classes (Availability column not sortable)
 - **Rooms:** sortable by Name, Capacity (Availability column not sortable). Delete uses `ConfirmDialog`.

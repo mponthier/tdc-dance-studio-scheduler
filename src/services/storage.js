@@ -171,45 +171,45 @@ export function seedDemoData() {
 
   const classes = [
     // Ballet (5)
-    mk('Mini Ballet',          'Ballet',          45, BI6),
-    mk('Ballet Basics',        'Ballet',          60, BI10),
-    mk('Ballet II',            'Ballet',          60, BI10),
-    mk('Ballet III',           'Ballet',          60, IA6),
-    mk('Ballet Advanced',      'Ballet',          90, IA10),
+    mk('Mini Ballet',          'Ballet',           30, BI6),   // 30m
+    mk('Ballet Basics',        'Ballet',           60, BI10),  // 60m
+    mk('Ballet II',            'Ballet',           60, BI10),  // 60m
+    mk('Ballet III',           'Ballet',           60, IA6),   // 60m
+    mk('Ballet Advanced',      'Ballet',          105, IA10),  // 105m
     // Contemporary (3)
-    mk('Contemporary I',       'Contemporary',    60, BI10),
-    mk('Contemporary II',      'Contemporary',    60, IA6),
-    mk('Teen Contemporary',    'Contemporary',    45, IA10),
+    mk('Contemporary I',       'Contemporary',     60, BI10),  // 60m
+    mk('Contemporary II',      'Contemporary',     60, IA6),   // 60m
+    mk('Teen Contemporary',    'Contemporary',     90, IA10),  // 90m
     // Lyrical (3)
-    mk('Lyrical I',            'Lyrical',         45, BI6),
-    mk('Lyrical II',           'Lyrical',         60, IA6),
-    mk('Teen Lyrical',         'Lyrical',         60, IA10),
+    mk('Lyrical I',            'Lyrical',          45, BI6),   // 45m
+    mk('Lyrical II',           'Lyrical',          60, IA6),   // 60m
+    mk('Teen Lyrical',         'Lyrical',          60, IA10),  // 60m
     // Pointe (2)
-    mk('Pointe I',             'Pointe',          45, BI10),
-    mk('Pointe Advanced',      'Pointe',          60, IA10),
+    mk('Pointe I',             'Pointe',           75, BI10),  // 75m
+    mk('Pointe Advanced',      'Pointe',          120, IA10),  // 120m
     // Musical Theater (2)
-    mk('Musical Theater',      'Musical Theater', 60, BI10),
-    mk('Teen Musical Theater', 'Musical Theater', 60, IA10),
+    mk('Musical Theater',      'Musical Theater',  60, BI10),  // 60m
+    mk('Teen Musical Theater', 'Musical Theater',  60, IA10),  // 60m
     // Hip Hop (4)
-    mk('Mini Hip Hop',         'Hip Hop',         30, BI6),
-    mk('Hip Hop Foundations',  'Hip Hop',         60, BI10),
-    mk('Hip Hop II',           'Hip Hop',         45, IA6),
-    mk('Hip Hop Advanced',     'Hip Hop',         60, IA10),
+    mk('Mini Hip Hop',         'Hip Hop',          30, BI6),   // 30m
+    mk('Hip Hop Foundations',  'Hip Hop',          60, BI10),  // 60m
+    mk('Hip Hop II',           'Hip Hop',          75, IA6),   // 75m
+    mk('Hip Hop Advanced',     'Hip Hop',         120, IA10),  // 120m
     // Jazz (4)
-    mk('Jazz Beginners',       'Jazz',            45, BI6),
-    mk('Jazz II',              'Jazz',            45, IA6),
-    mk('Jazz Funk',            'Jazz',            60, IA6),
-    mk('Teen Jazz',            'Jazz',            60, IA10),
+    mk('Jazz Beginners',       'Jazz',             45, BI6),   // 45m
+    mk('Jazz II',              'Jazz',             60, IA6),   // 60m
+    mk('Jazz Funk',            'Jazz',             60, IA6),   // 60m
+    mk('Teen Jazz',            'Jazz',             90, IA10),  // 90m
     // Drill (2)
-    mk('Drill Team Prep',      'Drill',           60, BI10),
-    mk('Drill Advanced',       'Drill',           90, IA10),
+    mk('Drill Team Prep',      'Drill',            60, BI10),  // 60m
+    mk('Drill Advanced',       'Drill',           105, IA10),  // 105m
     // All-Star (2)
-    mk('All-Star Junior',      'All-Star',        60, BI6),
-    mk('All-Star Company',     'All-Star',        90, IA10),
+    mk('All-Star Junior',      'All-Star',         60, BI6),   // 60m
+    mk('All-Star Company',     'All-Star',         90, IA10),  // 90m
     // Tap (3)
-    mk('Mini Tap',             'Tap',             30, BI6),
-    mk('Tap Beginners',        'Tap',             60, BI10),
-    mk('Tap Advanced',         'Tap',             60, IA10),
+    mk('Mini Tap',             'Tap',              30, BI6),   // 30m
+    mk('Tap Beginners',        'Tap',              60, BI10),  // 60m
+    mk('Tap Advanced',         'Tap',             120, IA10),  // 120m
   ]
   classesService.save(classes)
 }
