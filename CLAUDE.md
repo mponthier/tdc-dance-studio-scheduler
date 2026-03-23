@@ -140,6 +140,11 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 Both functions check teacher availability via `isWithinAvailability` (full class duration, with 1-minute inset) in addition to conflict-checking. Room availability is also validated with `isWithinAvailability` in the drag handlers — `isRoomSlotAvailable` is **not** used for drop validation, only for visual slot coloring.
 
+Drop validation enforces three additional constraints via helpers in `SchedulePage.jsx`:
+- `isRoomFreeForSlot(roomId, day, slotIndex, durationMinutes, excludeClassId, allClasses)` — blocks drop if another class already occupies the target room at an overlapping time.
+- `hasSkillLevelConflict(skillLevel, day, slotIndex, durationMinutes, excludeClassId, allClasses)` — blocks drop if another class with the same non-empty `skillLevel` overlaps on the same day.
+- Both checks are applied in `handleSlotDragOver` (prevents highlight) and `handleSlotDrop` (prevents commit).
+
 `slotIndexToTime(slotIndex)` converts grid row back to `"HH:MM"`.
 
 **Unscheduled panel:** Shown below the grid when any classes lack a day/time. Draggable chips can be dropped onto the grid to schedule them into a specific day + room slot.
@@ -272,4 +277,4 @@ Global custom properties in `src/App.css` (`:root`). Each component/page has a c
 - **AvailabilityEditor onChange in state updater:** Never call `onChange` inside a `setCells(prev => ...)` updater — this triggers the React 18 "Cannot update during render" warning. Use a `cellsRef` to track current cells and call `onChange` directly in the event handler instead.
 - **Auto-unschedule on availability edit:** `teacherCrud.update` and `roomCrud.update` in `useStudioData.js` automatically unschedule any classes that no longer fall within the updated availability (`isWithinAvailability` check). This resets `dayOfWeek`, `startTime`, `roomId`, and `teacherId` to `''` for affected classes. This happens silently — no toast or confirmation.
 - **1-minute availability inset:** `isWithinAvailability` checks `classStart+1` through `classEnd-1` against the availability window. This means a class can start or end exactly at an availability boundary (e.g. a class ending at 9:30pm is valid when availability ends at 9:30pm). All scheduling paths (drag/drop, Auto Schedule, ClassForm warnings) use this function and inherit the inset.
-- **Drag/drop availability gating:** Only `isWithinAvailability` is used to gate drops (room + teacher). `isRoomSlotAvailable` is used only for visual slot coloring. This allows dragging to slots adjacent to unavailable periods as long as the full class duration fits within an availability window.
+- **Drag/drop availability gating:** Drop validation checks: (1) `isWithinAvailability` for room and teacher availability windows, (2) `isRoomFreeForSlot` to prevent two classes sharing a room at the same time, (3) `hasSkillLevelConflict` to prevent same-skill-level classes overlapping on the same day, (4) teacher free/eligible checks. `isRoomSlotAvailable` is used only for visual slot coloring, not drop validation.
