@@ -243,7 +243,7 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
         top:    { style: 'medium', color: { argb: fgArgb } },
         left:   { style: 'medium', color: { argb: fgArgb } },
         bottom: { style: 'medium', color: { argb: fgArgb } },
-        right:  { style: 'thin',   color: { argb: 'FFFF4444' } },
+        right:  { style: 'medium', color: { argb: fgArgb } },
       }
     })
 
