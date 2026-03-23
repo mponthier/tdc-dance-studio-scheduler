@@ -49,6 +49,19 @@ function isRoomSlotAvailable(room, day, slot) {
   )
 }
 
+function fmtTime(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number)
+  const suffix = h >= 12 ? 'pm' : 'am'
+  const hour = h % 12 || 12
+  return m === 0 ? `${hour}${suffix}` : `${hour}:${String(m).padStart(2, '0')}${suffix}`
+}
+
+function addMins(timeStr, minutes) {
+  const [h, m] = timeStr.split(':').map(Number)
+  const total = h * 60 + m + minutes
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
 function slotToLabel(slot) {
   if (slot % 2 !== 0) return ''
   const totalMins = GRID_START_HOUR * 60 + GRID_START_MIN + slot * SLOT_MINUTES
@@ -221,7 +234,8 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
       } catch (_) { /* conflict — render without merge */ }
 
       const cell = ws.getCell(rowStart, col)
-      cell.value     = [cls.name, teacher?.name, cls.skillLevel].filter(Boolean).join('\n')
+      const timeRange = cls.startTime ? `${fmtTime(cls.startTime)}–${fmtTime(addMins(cls.startTime, cls.durationMinutes))}` : null
+      cell.value     = [cls.name, teacher?.name, cls.skillLevel, timeRange].filter(Boolean).join('\n')
       cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } }
       cell.font      = { size: 10, color: { argb: fgArgb }, bold: true }
       cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true }

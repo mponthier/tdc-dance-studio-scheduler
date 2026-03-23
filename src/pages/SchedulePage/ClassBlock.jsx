@@ -1,3 +1,5 @@
+import { formatTime, addMinutes } from '../../utils/timeHelpers'
+
 // Fallback palette when teacher has no color assigned (keyed by dance style)
 const STYLE_COLORS = {
   Ballet:       { bg: '#e8d5f7', text: '#6c2d9e' },
@@ -74,11 +76,16 @@ export default function ClassBlock({ cls, teacher, room, hasConflict, colorMode 
       onContextMenu={(e) => { e.preventDefault(); onContextMenu?.(e, cls) }}
       onDragStart={handleDragStart}
       onDragEnd={() => onDragEnd?.()}
-      title={[cls.name, teacher?.name, cls.skillLevel].filter(Boolean).join('\n')}
+      title={[cls.name, teacher?.name, cls.skillLevel, cls.startTime ? `${formatTime(cls.startTime)}–${formatTime(addMinutes(cls.startTime, cls.durationMinutes))}` : null].filter(Boolean).join('\n')}
     >
       <div className="class-block-name">{cls.name}</div>
       {teacher && <div className="class-block-meta">{teacher.name}</div>}
       {cls.skillLevel && <div className="class-block-meta">{cls.skillLevel}</div>}
+      {cls.startTime && (
+        <div className="class-block-meta">
+          {formatTime(cls.startTime)}–{formatTime(addMinutes(cls.startTime, cls.durationMinutes))}
+        </div>
+      )}
     </div>
   )
 }

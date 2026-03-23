@@ -4,6 +4,7 @@ Uses optional interval variables + AddNoOverlap for efficiency.
 Returns {"scheduled": [...], "unscheduled": [...id strings]}.
 """
 
+import time
 from collections import defaultdict
 from ortools.sat.python import cp_model
 
@@ -54,7 +55,40 @@ def intervals_overlap(s1: int, d1: int, s2: int, d2: int) -> bool:
     return s1 < s2 + d2 and s2 < s1 + d1
 
 
-def solve(data: dict) -> dict:
+def _emit(queue, message, scheduled=None, total=None, elapsed=None):
+    if queue is not None:
+        queue.put({"message": message, "scheduled": scheduled, "total": total, "elapsed": elapsed})
+
+
+class ProgressCallback(cp_model.CpSolverSolutionCallback):
+    """Fires each time CP-SAT finds an improved solution; pushes progress to a queue."""
+    def __init__(self, assign_vars, by_class, total, progress_queue, start_time):
+        super().__init__()
+        self._vars = assign_vars
+        self._by_class = by_class
+        self._total = total
+        self._queue = progress_queue
+        self._start = start_time
+        self._prev_count = 0
+
+    def on_solution_callback(self):
+        count = sum(
+            1 for idxs in self._by_class.values()
+            if any(self.boolean_value(self._vars[i]) for i in idxs)
+        )
+        elapsed = round(time.time() - self._start, 1)
+        improvement = f" (+{count - self._prev_count})" if self._prev_count > 0 else ""
+        self._prev_count = count
+        _emit(
+            self._queue,
+            f"Solution found: {count}/{self._total} classes{improvement} — {elapsed}s elapsed",
+            scheduled=count,
+            total=self._total,
+            elapsed=elapsed,
+        )
+
+
+def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> dict:
     all_classes  = data["classes"]
     all_teachers = data["teachers"]
     all_rooms    = data["rooms"]
@@ -67,6 +101,9 @@ def solve(data: dict) -> dict:
 
     if not unscheduled:
         return {"scheduled": [], "unscheduled": []}
+
+    _emit(progress_queue, f"Enumerating feasible slots for {len(unscheduled)} classes…",
+          total=len(unscheduled))
 
     # ------------------------------------------------------------------ #
     # Enumerate feasible assignments
@@ -131,7 +168,12 @@ def solve(data: dict) -> dict:
                 start += SLOT_MINUTES
 
     if not assignments:
+        _emit(progress_queue, "No feasible assignments found — cannot schedule any classes.",
+              scheduled=0, total=len(unscheduled))
         return {"scheduled": [], "unscheduled": [c["id"] for c in unscheduled]}
+
+    _emit(progress_queue, f"Found {len(assignments):,} feasible assignments. Building model…",
+          total=len(unscheduled))
 
     # ------------------------------------------------------------------ #
     # Build CP-SAT model
@@ -205,11 +247,24 @@ def solve(data: dict) -> dict:
     # Solve
     # ------------------------------------------------------------------ #
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 115.0
+    solver.parameters.max_time_in_seconds = float(timeout_seconds)
 
-    status = solver.solve(model)
+    _emit(progress_queue,
+          f"Model built ({len(assign_vars):,} variables, {len(assignments):,} assignments). Solver running…",
+          total=len(unscheduled))
+
+    if progress_queue is not None:
+        cb = ProgressCallback(assign_vars, by_class, len(unscheduled), progress_queue, time.time())
+        status = solver.solve(model, cb)
+    else:
+        status = solver.solve(model)
+
+    status_label = {cp_model.OPTIMAL: "optimal", cp_model.FEASIBLE: "feasible (time limit reached)"}.get(status, "no solution")
+    elapsed_total = round(solver.wall_time, 1)
+    _emit(progress_queue, f"Solver finished: {status_label} — {elapsed_total}s", total=len(unscheduled))
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        _emit(progress_queue, "No feasible schedule found.", scheduled=0, total=len(unscheduled))
         return {"scheduled": [], "unscheduled": [c["id"] for c in unscheduled]}
 
     # ------------------------------------------------------------------ #

@@ -184,8 +184,9 @@ function TimeLabel({ slotIndex }) {
 export default function SchedulePage({ classes, teachers, rooms, students, classCrud }) {
   const gridRef = useRef(null)
   const [selected, setSelected]           = useState(null)
-  const [optimizeResult, setOptimizeResult] = useState(null)
   const [optimizing, setOptimizing] = useState(false)
+  const [scheduleProgress, setScheduleProgress] = useState({ messages: [], scheduled: null, total: null })
+  const [solverTimeout, setSolverTimeout] = useState(120)
   const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
   const [filterRoomIds, setFilterRoomIds]       = useState(new Set())
   const [teacherDropOpen, setTeacherDropOpen]   = useState(false)
@@ -268,21 +269,26 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
 
   function handleClearSchedule() {
     classCrud.updateMany(classes.map((c) => ({ ...c, dayOfWeek: '', startTime: '', roomId: '', teacherId: '' })))
-    setOptimizeResult(null)
   }
 
   async function handleAutoSchedule() {
     setOptimizing(true)
-    setOptimizeResult(null)
+    setScheduleProgress({ messages: [], scheduled: null, total: null })
     const t0 = Date.now()
     try {
       let scheduled, unscheduledIds, usedFallback = false
       try {
-        const result = await optimizeWithCPSAT(classes, teachers, rooms)
+        const result = await optimizeWithCPSAT(classes, teachers, rooms, (p) =>
+          setScheduleProgress((prev) => ({
+            messages: [...prev.messages, p.message],
+            scheduled: p.scheduled ?? prev.scheduled,
+            total: p.total ?? prev.total,
+          })),
+          solverTimeout
+        )
         scheduled = result.scheduled
         unscheduledIds = result.unscheduledIds
       } catch (err) {
-        // Backend unavailable — fall back to greedy
         console.warn('CP-SAT backend error, falling back to greedy:', err)
         usedFallback = true
         const updated = optimizeSchedule(classes, teachers, rooms)
@@ -297,12 +303,12 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
         .map((id) => classes.find((c) => c.id === id)?.name)
         .filter(Boolean)
       const solver = usedFallback ? 'greedy fallback' : 'CP-SAT'
-      setOptimizeResult({
-        count: scheduled.length,
-        unscheduled: unscheduledNames,
-        solver,
-        elapsed,
-      })
+      let summary = scheduled.length > 0
+        ? `Scheduled ${scheduled.length} class${scheduled.length !== 1 ? 'es' : ''}.`
+        : 'No classes could be scheduled.'
+      if (unscheduledNames.length > 0) summary += ` Could not place: ${unscheduledNames.join(', ')}.`
+      summary += ` (${solver}, ${elapsed}s)`
+      setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, summary] }))
     } finally {
       setOptimizing(false)
     }
@@ -518,8 +524,27 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
             <button className="btn btn-primary" onClick={() => setConfirmClear(true)} disabled={scheduledClasses.length === 0}>
               Clear Schedule
             </button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--color-text-muted)' }}>
+              Timeout
+              <select
+                value={solverTimeout}
+                onChange={(e) => setSolverTimeout(Number(e.target.value))}
+                disabled={optimizing}
+                style={{ fontSize: 13 }}
+              >
+                {[60,90,120,150,180,210,240,270,300,330,360,390,420,450,480,510,540,570,600].map((s) => (
+                  <option key={s} value={s}>
+                    {s < 120 ? `${s}s` : s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button className="btn btn-primary" onClick={() => setConfirmAutoSchedule(true)} disabled={optimizing || classes.length === 0}>
-              {optimizing ? 'Scheduling…' : 'Auto Schedule'}
+              {optimizing
+                ? scheduleProgress.scheduled != null
+                  ? `Scheduling… (${scheduleProgress.scheduled}/${scheduleProgress.total})`
+                  : 'Scheduling…'
+                : 'Auto Schedule'}
             </button>
           </div>
         )}
@@ -689,16 +714,19 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
         </div>
       )}
 
-      {optimizeResult && (
+      {scheduleProgress.messages.length > 0 && (
         <div className="optimize-messages">
-          <span>
-            {optimizeResult.count > 0
-              ? `Scheduled ${optimizeResult.count} class${optimizeResult.count !== 1 ? 'es' : ''}.`
-              : 'No classes could be scheduled.'}
-            {optimizeResult.unscheduled.length > 0 && ` Could not place: ${optimizeResult.unscheduled.join(', ')}.`}
-            {` (${optimizeResult.solver}, ${optimizeResult.elapsed}s)`}
-          </span>
-          <button className="btn btn-ghost btn-sm" onClick={() => setOptimizeResult(null)}>Clear</button>
+          {scheduleProgress.messages.map((msg, i) => (
+            <div key={i}>{msg}</div>
+          ))}
+          {!optimizing && (
+            <div className="optimize-messages-footer">
+              <button className="btn btn-ghost btn-sm"
+                onClick={() => setScheduleProgress({ messages: [], scheduled: null, total: null })}>
+                Clear
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -720,7 +748,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
       {confirmAutoSchedule && (
         <ConfirmDialog
           title="Auto Schedule"
-          message="Auto scheduling may take up to 2 minutes to complete. Proceed?"
+          message={`Auto scheduling may take up to ${solverTimeout < 120 ? `${solverTimeout}s` : solverTimeout % 60 === 0 ? `${solverTimeout / 60} minute${solverTimeout / 60 !== 1 ? 's' : ''}` : `${Math.floor(solverTimeout / 60)}m ${solverTimeout % 60}s`} to complete. Proceed?`}
           confirmLabel="Schedule"
           onConfirm={() => { setConfirmAutoSchedule(false); handleAutoSchedule() }}
           onCancel={() => setConfirmAutoSchedule(false)}

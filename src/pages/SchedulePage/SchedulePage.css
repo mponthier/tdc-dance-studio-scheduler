@@ -127,9 +127,8 @@
 
 .optimize-messages {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 14px;
   padding: 11px 16px;
   background: var(--color-primary-subtle);
@@ -137,6 +136,13 @@
   border-radius: var(--radius);
   font-size: 13px;
   color: #500000;
+  line-height: 1.6;
+}
+
+.optimize-messages-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 /* Unscheduled classes panel */
