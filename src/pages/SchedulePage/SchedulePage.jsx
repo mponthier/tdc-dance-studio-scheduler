@@ -82,6 +82,35 @@ function isTeacherFreeForSlot(teacherId, day, slotIndex, durationMinutes, exclud
   )
 }
 
+function isRoomFreeForSlot(roomId, day, slotIndex, durationMinutes, excludeClassId, allClasses) {
+  const propStart = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
+  const propEnd   = propStart + durationMinutes
+  return !allClasses.some(
+    (cls) =>
+      cls.id !== excludeClassId &&
+      cls.roomId === roomId &&
+      cls.dayOfWeek === day &&
+      cls.startTime &&
+      toMins(cls.startTime) < propEnd &&
+      toMins(cls.startTime) + cls.durationMinutes > propStart
+  )
+}
+
+function hasSkillLevelConflict(skillLevel, day, slotIndex, durationMinutes, excludeClassId, allClasses) {
+  if (!skillLevel) return false
+  const propStart = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
+  const propEnd   = propStart + durationMinutes
+  return allClasses.some(
+    (cls) =>
+      cls.id !== excludeClassId &&
+      cls.skillLevel === skillLevel &&
+      cls.dayOfWeek === day &&
+      cls.startTime &&
+      toMins(cls.startTime) < propEnd &&
+      toMins(cls.startTime) + cls.durationMinutes > propStart
+  )
+}
+
 function slotIndexToTime(slotIndex) {
   const totalMins = GRID_START_HOUR * 60 + GRID_START_MIN + slotIndex * SLOT_MINUTES
   const h = Math.floor(totalMins / 60)
@@ -330,6 +359,8 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
     const room = rooms.find((r) => r.id === roomId)
     if (!room) return
     if (!isWithinAvailability(room.availability, day, slotIndexToTime(slotIndex), cls.durationMinutes)) return
+    if (!isRoomFreeForSlot(roomId, day, slotIndex, cls.durationMinutes, cls.id, classes)) return
+    if (hasSkillLevelConflict(cls.skillLevel, day, slotIndex, cls.durationMinutes, cls.id, classes)) return
     const isUnscheduled = !cls.dayOfWeek || !cls.startTime
     if (isUnscheduled) {
       if (findEligibleTeachers(cls, day, slotIndex, teachers, classes).length === 0) return
@@ -351,6 +382,8 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
     const room = rooms.find((r) => r.id === roomId)
     if (!room) return
     if (!isWithinAvailability(room.availability, day, slotIndexToTime(slotIndex), cls.durationMinutes)) return
+    if (!isRoomFreeForSlot(roomId, day, slotIndex, cls.durationMinutes, cls.id, classes)) return
+    if (hasSkillLevelConflict(cls.skillLevel, day, slotIndex, cls.durationMinutes, cls.id, classes)) return
     const isUnscheduled = !cls.dayOfWeek || !cls.startTime
     if (isUnscheduled) {
       const eligible = findEligibleTeachers(cls, day, slotIndex, teachers, classes)
