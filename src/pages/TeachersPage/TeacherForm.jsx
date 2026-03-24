@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import AvailabilityEditor from '../../components/AvailabilityEditor'
 
-const SPECIALTIES = ['All-Star', 'Ballet', 'Contemporary', 'Drill', 'Hip Hop', 'Jazz', 'Lyrical', 'Musical Theater', 'Pointe', 'Tap']
+const GENRES = ['All-Star', 'Ballet', 'Contemporary', 'Drill', 'Hip Hop', 'Jazz', 'Lyrical', 'Musical Theater', 'Pointe', 'Tap']
 
 const PRESET_COLORS = [
   '#6c5ce7', '#0984e3', '#00b894', '#e17055', '#fd79a8',
@@ -9,7 +9,12 @@ const PRESET_COLORS = [
   '#d63031', '#e67e22', '#2d3436', '#74b9ff', '#b2bec3',
 ]
 
-const DEFAULTS = { name: '', specialty: [], phone: '', email: '', color: '#6c5ce7', availability: [] }
+const DEFAULTS = { name: '', genre: [], specialties: [], phone: '', email: '', color: '#6c5ce7', availability: [] }
+
+function firstUnusedColor(teachers) {
+  const used = new Set(teachers.map((t) => t.color?.toLowerCase()))
+  return PRESET_COLORS.find((c) => !used.has(c.toLowerCase())) ?? '#6c5ce7'
+}
 
 export default function TeacherForm({ initial, teachers = [], onSave, onClose }) {
   const [form, setForm] = useState(
@@ -18,11 +23,12 @@ export default function TeacherForm({ initial, teachers = [], onSave, onClose })
           ...initial,
           color: initial.color || '#6c5ce7',
           availability: initial.availability || [],
-          specialty: Array.isArray(initial.specialty)
-            ? initial.specialty
-            : initial.specialty ? [initial.specialty] : [],
+          genre: Array.isArray(initial.genre)
+            ? initial.genre
+            : initial.genre ? [initial.genre] : [],
+          specialties: Array.isArray(initial.specialties) ? initial.specialties : [],
         }
-      : DEFAULTS,
+      : { ...DEFAULTS, color: firstUnusedColor(teachers) },
   )
 
   function set(field, value) {
@@ -57,22 +63,48 @@ export default function TeacherForm({ initial, teachers = [], onSave, onClose })
         <div className="form-group">
           <label>Genre</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 4 }}>
-            {SPECIALTIES.map((s) => (
+            {GENRES.map((s) => (
               <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 'normal', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <input
                   type="checkbox"
-                  checked={form.specialty.includes(s)}
-                  onChange={(e) =>
-                    set('specialty', e.target.checked
-                      ? [...form.specialty, s]
-                      : form.specialty.filter((x) => x !== s))
-                  }
+                  checked={form.genre.includes(s)}
+                  onChange={(e) => {
+                    const newGenre = e.target.checked
+                      ? [...form.genre, s]
+                      : form.genre.filter((x) => x !== s)
+                    setForm((f) => ({
+                      ...f,
+                      genre: newGenre,
+                      specialties: f.specialties.filter((g) => newGenre.includes(g)),
+                    }))
+                  }}
                 />
                 {s}
               </label>
             ))}
           </div>
         </div>
+        {form.genre.length > 0 && (
+          <div className="form-group">
+            <label>Specialty for Scheduling</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 4 }}>
+              {[...form.genre].sort().map((s) => (
+                <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 'normal', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.specialties.includes(s)}
+                    onChange={(e) =>
+                      set('specialties', e.target.checked
+                        ? [...form.specialties, s]
+                        : form.specialties.filter((x) => x !== s))
+                    }
+                  />
+                  {s}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="form-row">
           <div className="form-group">
             <label>Phone</label>

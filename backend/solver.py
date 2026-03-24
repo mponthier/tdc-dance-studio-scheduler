@@ -42,11 +42,9 @@ def teacher_eligible(teacher: dict, cls: dict) -> bool:
     style = (cls.get("style") or "").strip()
     if not style:
         return True
-    specs = teacher.get("specialty", [])
+    specs = teacher.get("genre", [])
     if isinstance(specs, str):
         specs = [specs] if specs else []
-    if not specs:
-        return True
     return any(s.lower() == style.lower() for s in specs)
 
 
@@ -164,6 +162,7 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
                                 "teacher_id": teacher["id"],
                                 "duration":   duration,
                                 "skill_level": cls.get("skillLevel") or "",
+                                "style":      (cls.get("style") or "").lower(),
                             })
                 start += SLOT_MINUTES
 
@@ -219,12 +218,22 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
         model.add_no_overlap(intervals)
 
     # ------------------------------------------------------------------ #
-    # Objective: maximise classes scheduled (primary), prefer earlier days (secondary)
+    # Objective: maximise classes scheduled (primary), prefer priority-genre
+    # teacher assignments (secondary), prefer earlier days (tertiary)
     # ------------------------------------------------------------------ #
-    # Day weights: Monday=6 … Sunday=0. big_M ensures more classes always beats day preference.
+    # Day weights: Monday=6 … Sunday=0.
     DAY_WEIGHT = {"Monday": 6, "Tuesday": 5, "Wednesday": 4,
                   "Thursday": 3, "Friday": 2, "Saturday": 1, "Sunday": 0}
-    BIG_M = len(unscheduled) * max(DAY_WEIGHT.values()) + 1  # > max possible day score
+    # PRIORITY_BONUS sits above max day score so priority beats day preference,
+    # but BIG_M >> PRIORITY_BONUS so total classes always dominates.
+    PRIORITY_BONUS = max(DAY_WEIGHT.values()) + 1   # 7
+    BIG_M = len(unscheduled) * (PRIORITY_BONUS + max(DAY_WEIGHT.values())) + 1
+
+    # Per-teacher priority genre sets (lower-cased for case-insensitive match)
+    teacher_priority = {
+        t["id"]: {g.lower() for g in (t.get("specialties") or [])}
+        for t in all_teachers
+    }
 
     class_scheduled_vars = []
     for cls_id, idxs in by_class.items():
@@ -241,7 +250,12 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
         assign_vars[i] * DAY_WEIGHT.get(assignments[i]["day"], 0)
         for i in range(len(assignments))
     )
-    model.maximize(sum(class_scheduled_vars) * BIG_M + day_score)
+    priority_score = sum(
+        assign_vars[i]
+        for i, a in enumerate(assignments)
+        if a["style"] and a["style"] in teacher_priority.get(a["teacher_id"], set())
+    )
+    model.maximize(sum(class_scheduled_vars) * BIG_M + priority_score * PRIORITY_BONUS + day_score)
 
     # ------------------------------------------------------------------ #
     # Solve

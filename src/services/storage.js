@@ -24,7 +24,10 @@ export const studentsService = {
 }
 
 export const teachersService = {
-  getAll: () => load(KEYS.teachers),
+  getAll: () => load(KEYS.teachers).map((t) => {
+    const withGenre = t.genre !== undefined ? t : { ...t, genre: t.specialty ?? [] }
+    return withGenre.specialties !== undefined ? withGenre : { ...withGenre, specialties: withGenre.priorityGenres ?? [] }
+  }),
   save: (records) => save(KEYS.teachers, records),
 }
 
@@ -95,37 +98,43 @@ export function seedDemoData() {
   const teachers = [
     {
       id: crypto.randomUUID(), name: 'Suzan Ponthier',
-      specialty: ['Ballet', 'Contemporary', 'Lyrical', 'Pointe', 'Musical Theater', 'Jazz'],
+      genre: ['Ballet', 'Contemporary', 'Lyrical', 'Pointe', 'Musical Theater', 'Jazz'],
+      specialties: [],
       phone: '469-450-6955', email: 'suzanponthier@gmail.com', color: '#0984e3',
       availability: defaultAvailability,
     },
     {
       id: crypto.randomUUID(), name: 'Mark Ponthier',
-      specialty: ['Hip Hop', 'Jazz', 'Drill', 'All-Star', 'Contemporary'],
+      genre: ['Hip Hop', 'Jazz', 'Drill', 'All-Star', 'Contemporary'],
+      specialties: [],
       phone: '214-578-3676', email: 'mponthier@gmail.com', color: '#6c5ce7',
       availability: defaultAvailability,
     },
     {
       id: crypto.randomUUID(), name: 'Virginia Nuckolls',
-      specialty: ['Tap', 'Jazz', 'Musical Theater', 'Lyrical'],
+      genre: ['Tap', 'Jazz', 'Musical Theater', 'Lyrical'],
+      specialties: [],
       phone: '469-450-6954', email: 'virginia.nuckolls@gmail.com', color: '#00b894',
       availability: defaultAvailability,
     },
     {
       id: crypto.randomUUID(), name: 'Julia Ponthier',
-      specialty: ['Ballet', 'Lyrical', 'Contemporary', 'Pointe'],
+      genre: ['Ballet', 'Lyrical', 'Contemporary', 'Pointe'],
+      specialties: [],
       phone: '469-555-0101', email: 'julia.ponthier@gmail.com', color: '#e17055',
       availability: defaultAvailability,
     },
     {
       id: crypto.randomUUID(), name: 'Jake Ponthier',
-      specialty: ['Hip Hop', 'All-Star', 'Drill', 'Jazz'],
+      genre: ['Hip Hop', 'All-Star', 'Drill', 'Jazz'],
+      specialties: [],
       phone: '214-555-0102', email: 'jake.ponthier@gmail.com', color: '#d63031',
       availability: defaultAvailability,
     },
     {
       id: crypto.randomUUID(), name: 'Doc Nuckolls',
-      specialty: ['Tap', 'Musical Theater', 'Jazz', 'Contemporary'],
+      genre: ['Tap', 'Musical Theater', 'Jazz', 'Contemporary'],
+      specialties: [],
       phone: '469-555-0103', email: 'doc.nuckolls@gmail.com', color: '#fd79a8',
       availability: defaultAvailability,
     },

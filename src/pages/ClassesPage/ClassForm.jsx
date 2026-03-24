@@ -93,8 +93,8 @@ export default function ClassForm({ initial, teachers, rooms, allClasses, onSave
                 setForm((f) => {
                   if (!f.teacherId) return { ...f, style: newStyle }
                   const teacher = teachers.find((t) => t.id === f.teacherId)
-                  const specs = Array.isArray(teacher?.specialty) ? teacher.specialty : (teacher?.specialty ? [teacher.specialty] : [])
-                  const stillValid = specs.length === 0 || specs.some((s) => s.toLowerCase() === newStyle.toLowerCase())
+                  const specs = Array.isArray(teacher?.genre) ? teacher.genre : (teacher?.genre ? [teacher.genre] : [])
+                  const stillValid = specs.some((s) => s.toLowerCase() === newStyle.toLowerCase())
                   return { ...f, style: newStyle, teacherId: stillValid ? f.teacherId : '' }
                 })
               }}
@@ -121,8 +121,7 @@ export default function ClassForm({ initial, teachers, rooms, allClasses, onSave
               {teachers
                 .filter((t) => {
                   if (!form.style) return true
-                  const specs = Array.isArray(t.specialty) ? t.specialty : (t.specialty ? [t.specialty] : [])
-                  if (specs.length === 0) return true
+                  const specs = Array.isArray(t.genre) ? t.genre : (t.genre ? [t.genre] : [])
                   return specs.some((s) => s.toLowerCase() === form.style.toLowerCase())
                 })
                 .map((t) => (

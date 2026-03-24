@@ -20,7 +20,7 @@ function mergeResults(classes, scheduled, unscheduled) {
  * or throws if the backend is unreachable (caller should fall back to greedy).
  */
 export async function optimizeWithCPSAT(classes, teachers, rooms, onProgress, timeoutSeconds = 120) {
-  const fetchTimeout = (timeoutSeconds + 30) * 1000   // 30s buffer for enumeration + overhead
+  const fetchTimeout = (timeoutSeconds + 300) * 1000  // 5-min buffer covers enumeration phase + overhead
   const body = JSON.stringify({ classes, teachers, rooms, timeoutSeconds })
 
   if (!onProgress) {

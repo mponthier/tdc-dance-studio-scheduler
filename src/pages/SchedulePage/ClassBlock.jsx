@@ -53,6 +53,8 @@ function getColors(teacher, style, skillLevel, colorMode) {
 
 export default function ClassBlock({ cls, teacher, room, hasConflict, colorMode = 'teacher', style: gridStyle, onClick, onContextMenu, onDragStart, onDragEnd }) {
   const colors = getColors(teacher, cls.style, cls.skillLevel, colorMode)
+  const isPriority = cls.style && Array.isArray(teacher?.specialties) &&
+    teacher.specialties.some((g) => g.toLowerCase() === cls.style.toLowerCase())
 
   function handleDragStart(e) {
     e.dataTransfer.effectAllowed = 'move'
@@ -79,7 +81,7 @@ export default function ClassBlock({ cls, teacher, room, hasConflict, colorMode 
       title={[cls.name, teacher?.name, cls.skillLevel, cls.startTime ? `${formatTime(cls.startTime)}–${formatTime(addMinutes(cls.startTime, cls.durationMinutes))}` : null].filter(Boolean).join('\n')}
     >
       <div className="class-block-name">{cls.name}</div>
-      {teacher && <div className="class-block-meta">{teacher.name}</div>}
+      {teacher && <div className="class-block-meta" style={isPriority ? { fontWeight: 'bold' } : undefined}>{teacher.name}</div>}
       {cls.skillLevel && <div className="class-block-meta">{cls.skillLevel}</div>}
       {cls.startTime && (
         <div className="class-block-meta">

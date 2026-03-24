@@ -53,7 +53,7 @@ Then refresh the page.
 | `src/utils/conflicts.js` | `detectConflicts(candidate, allClasses)` — used in `ClassForm` for real-time warnings. `findAllConflictingIds(allClasses)` — O(n²) scan used for conflict badges on the Classes list and `ClassBlock` tinting. |
 | `src/utils/availability.js` | `isWithinAvailability(availability, dayOfWeek, startTime, durationMinutes)` — returns true if the class fits inside an availability window. Applies a **1-minute inset**: checks `classStart+1` through `classEnd-1`, so a class can start/end exactly at an availability boundary. `detectAvailabilityWarnings(candidate, teacher, room)` — called alongside `detectConflicts` in `ClassForm`. |
 | `src/utils/timeHelpers.js` | Grid positioning math: `timeToRow`, `durationToRowSpan`. Constants: `DAYS`, `GRID_START_HOUR` (15), `GRID_START_MIN` (30), `GRID_END_HOUR` (21), `GRID_END_MIN` (30), `SLOT_MINUTES` (15), `TOTAL_SLOTS` (24). |
-| `src/utils/optimizer.js` | `optimizeSchedule(classes, teachers, rooms) → updatedClasses[]` — greedy scheduler (fallback). Sorts by duration descending. If a class already has a `teacherId` whose specialty doesn't match the class genre, the class is skipped entirely. If a class already has a `roomId`, that room is tried first. If no teacher is assigned, finds the first eligible teacher (by genre/specialty) who is available and conflict-free at the chosen slot. Two classes with the same non-empty `skillLevel` are never placed in overlapping time slots. Returns only newly scheduled classes. |
+| `src/utils/optimizer.js` | `optimizeSchedule(classes, teachers, rooms) → updatedClasses[]` — greedy scheduler (fallback). Sorts by duration descending. If a class already has a `teacherId` whose `genre` doesn't match the class genre, the class is skipped entirely. If a class already has a `roomId`, that room is tried first. If no teacher is assigned, finds the first eligible teacher (by `genre`/`specialties`) who is available and conflict-free at the chosen slot. Two classes with the same non-empty `skillLevel` are never placed in overlapping time slots. Returns only newly scheduled classes. |
 | `src/utils/optimizerCPSAT.js` | `optimizeWithCPSAT(classes, teachers, rooms)` — POSTs to the CP-SAT backend (`http://localhost:8000/api/optimize`), merges results back onto class objects. 120s fetch timeout. `isCPSATAvailable()` — 2s health probe. |
 | `src/utils/exportSchedule.js` | `exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms)` — ExcelJS-based export that mirrors the room-subdivided weekly grid. |
 | `src/utils/exportPDF.js` | `exportScheduleToPDF(gridElement)` — html2canvas + jsPDF export. Captures the inner `.weekly-grid` element (not the overflow wrapper) to avoid clipping. Uses a custom page size wide enough to fit the full grid aspect ratio. |
@@ -62,7 +62,7 @@ Then refresh the page.
 
 ```js
 // dss_teachers
-{ id, name, specialty: string[], phone, email, color: "#hex", availability: [{dayOfWeek, startTime, endTime}] }
+{ id, name, genre: string[], specialties: string[], phone, email, color: "#hex", availability: [{dayOfWeek, startTime, endTime}] }
 
 // dss_rooms
 { id, name, capacity: number, availability: [{dayOfWeek, startTime, endTime}] }
@@ -87,12 +87,16 @@ Then refresh the page.
 - **Students:** one per skill level — Emma Johnson (Beg/Int 10+), Liam Park (Int/Adv 10+), Sofia Rivera (Int/Adv 10+), Noah Chen (Beg/Int 6-10), Olivia Williams (Int/Adv 10+), Ava Martinez (Int/Adv 6-10)
 - **Phone format:** `xxx-xxx-xxxx`
 
-### Teacher specialties & class genres
+### Teacher genres & class genres
 
-`SPECIALTIES` (used as checkboxes in TeacherForm, dropdown in ClassForm):
+`GENRES` (used as checkboxes in TeacherForm, dropdown in ClassForm):
 `Ballet, Contemporary, Hip Hop, Jazz, Lyrical, Musical Theater, Pointe, Tap, Drill, All-Star`
 
-The UI label is **Genre** everywhere (not "Specialty" or "Style"). Teacher `specialty` is stored as an array of strings. ClassForm filters the teacher dropdown to only show teachers whose specialty array includes the selected class genre (case-insensitive). Changing genre clears the teacher if they are no longer eligible.
+The UI label is **Genre** everywhere. Teacher `genre` is stored as an array of strings. A teacher with no genres set is **never** eligible for any class that has a genre. ClassForm filters the teacher dropdown to only show teachers whose `genre` array includes the selected class genre (case-insensitive). Changing genre clears the teacher if they are no longer eligible.
+
+`teachersService.getAll()` includes a migration shim: if a loaded teacher record is missing `genre`, it copies the value from `specialty` (old field name); if missing `specialties`, it copies from `priorityGenres` (old field name). This preserves existing localStorage data after the field renames.
+
+**Specialty for Scheduling (`specialties`):** Each teacher has a `specialties: string[]` field (a subset of their `genre`). Configured in `TeacherForm` under a **"Specialty for Scheduling"** checkbox section that only shows genres the teacher can already teach (sorted alphabetically); unchecking a genre automatically removes it from `specialties`. In the greedy optimizer (`optimizer.js`), eligible teachers are sorted so those with the class genre in their `specialties` are tried first. In the CP-SAT solver (`solver.py`), a `priority_score` term is added to the objective (weighted by `PRIORITY_BONUS = 7`, between max day score and `BIG_M`) to prefer assigning classes to specialty-for-scheduling teachers. `BIG_M` is recalculated as `len(unscheduled) * (PRIORITY_BONUS + max_day_weight) + 1` to maintain objective hierarchy: more classes > priority teacher matches > earlier days. In `ClassBlock`, the teacher name is rendered bold when the assigned teacher has the class genre in their `specialties`.
 
 ### Weekly grid (Schedule page)
 
@@ -155,7 +159,7 @@ Drop validation enforces three additional constraints via helpers in `SchedulePa
 
 **Optimize result message:** Shown below the grid after Auto Schedule. Format: `"Scheduled N classes. (CP-SAT, 3.2s)"` or `"(greedy fallback, 0.1s)"`. Persists until dismissed with a Clear button.
 
-`ClassBlock` displays class name, teacher name, and skill level (room is omitted — it's already shown as the column header). Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip matches the same three fields. Block coloring is controlled by `colorMode` (see Color mode toggle above).
+`ClassBlock` displays class name, teacher name, and skill level (room is omitted — it's already shown as the column header). The teacher name is rendered **bold** when the assigned teacher has the class genre in their `specialties` (Specialty for Scheduling). Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip matches the same three fields. Block coloring is controlled by `colorMode` (see Color mode toggle above).
 
 ### Export to Excel (`src/utils/exportSchedule.js`)
 
@@ -196,12 +200,28 @@ uvicorn main:app --port 8000
 
 **Files:**
 - `backend/main.py` — FastAPI app. CORS allows `localhost:5173` and `localhost:5174`. Custom HTTP middleware adds `Access-Control-Allow-Private-Network: true` to all responses (required by Chrome for cross-port localhost requests). Endpoints: `POST /api/optimize`, `GET /api/health`.
-- `backend/solver.py` — CP-SAT model. Enumerates all feasible (class, day, start, room, teacher) assignments filtered by availability (1-minute inset) and specialty. Uses **optional interval variables + `AddNoOverlap`** for room, teacher, and skill-level conflict constraints (much more efficient than pairwise). Pre-filters assignments that conflict with already-scheduled classes. Objective: maximize classes scheduled (primary, weighted by `BIG_M`) + prefer earlier days in the week Monday→Sunday (secondary). Solver time limit: 115s.
+- `backend/solver.py` — CP-SAT model. Enumerates all feasible (class, day, start, room, teacher) assignments filtered by availability (1-minute inset) and genre eligibility. Uses **optional interval variables + `AddNoOverlap`** for room, teacher, and skill-level conflict constraints (much more efficient than pairwise). Pre-filters assignments that conflict with already-scheduled classes. Objective: maximize classes scheduled (primary, `BIG_M`) + prefer `specialties`-matched teacher assignments (`PRIORITY_BONUS = 7`) + prefer earlier days Monday→Sunday. Solver time limit: 115s.
 - `backend/requirements.txt` — fastapi, uvicorn[standard], ortools, pydantic.
 
 **Timeouts:** Frontend fetch timeout = 120s. Solver time limit = 115s (5s buffer). If the fetch times out or the backend is unreachable, `handleAutoSchedule` catches the error and falls back to greedy.
 
 **Chrome Private Network Access:** When the React app at `localhost:5173` fetches `localhost:8000`, Chrome enforces a preflight check requiring `Access-Control-Allow-Private-Network: true`. This is handled by the HTTP middleware in `main.py` — do not remove it.
+
+### Optimizer rules
+
+Hard constraints enforced by both the greedy optimizer (`src/utils/optimizer.js`) and CP-SAT solver (`backend/solver.py`), as well as the drag/drop handlers and ClassForm teacher dropdown in `SchedulePage.jsx` and `ClassForm.jsx`:
+
+1. **Teacher genre match** — teacher's `genre` array must include the class's genre. Teachers with no genres set are never eligible for any class that has a genre.
+2. **Teacher availability** — class must fall within the teacher's availability window (1-minute inset: class can start/end exactly at a boundary).
+3. **Room availability** — class must fall within the room's availability window (same 1-minute inset).
+4. **Teacher no-overlap** — a teacher cannot teach two classes at the same time on the same day.
+5. **Room no-overlap** — two classes cannot occupy the same room at the same time on the same day.
+6. **Skill level no-overlap** — two classes with the same non-empty skill level cannot overlap on the same day (across any rooms).
+7. **Grid boundaries** — class must start and end within 3:30pm–9:30pm, snapped to 15-minute slots.
+8. **Pre-assigned teacher respected** — if a class already has a `teacherId`, only that teacher is used (if their genre no longer matches, the class is skipped entirely by the optimizer).
+9. **Pre-assigned room preferred** — if a class already has a `roomId`, that room is tried first before others.
+
+Soft preferences (CP-SAT objective, in priority order): maximize classes scheduled (primary, `BIG_M`) → prefer teacher with class genre in their `specialties` (`PRIORITY_BONUS = 7`) → prefer earlier days Monday→Sunday. Greedy also sorts eligible teachers so `specialties`-matched teachers are tried first, and processes longest classes first.
 
 ### Tables (Classes, Students, Teachers, Rooms pages)
 
@@ -209,7 +229,7 @@ All tables support sortable columns via `sortKey`/`sortDir` state and a `SortTh`
 
 - **Classes:** columns are Class, Skill Level, Teacher, Day & Time, Room, Duration, Students (in that order). Sortable by all columns. Three multi-select filters: skill level, duration, and teacher (teacher includes "Unassigned" sentinel `'__unassigned__'`). State: `filterTeacherIds` (Set), `filterSkillLevels` (Set), `filterDurations` (Set). Duration filter options are derived dynamically from the current class data (sorted ascending). Skill level displayed as a color-coded badge using `SKILL_BADGE` (same mapping as Students page). Duration field in ClassForm is a `<select>` restricted to 15-minute increments between 30 and 120 minutes (30, 45, 60, 75, 90, 105, 120).
 - **Students:** sortable by all columns; skill level filter is a multi-select dropdown (checkbox list). State: `filterSkills` (Set).
-- **Teachers:** sortable by Name, Genre, Phone, Email, Classes (Availability column not sortable)
+- **Teachers:** sortable by Name, Genre, Specialty, Phone, Email, Classes (Availability column not sortable). Genre and Specialty columns display values sorted alphabetically. When adding a new teacher, the color picker pre-selects the first `PRESET_COLORS` entry not already used by another teacher.
 - **Rooms:** sortable by Name, Capacity (Availability column not sortable). Delete uses `ConfirmDialog`.
 
 Unscheduled classes display "Unscheduled" instead of a time string. Always guard against empty `startTime` before calling `formatTime` or `addMinutes`.
@@ -267,7 +287,7 @@ Global custom properties in `src/App.css` (`:root`). Each component/page has a c
 
 - **Batch updates:** Never call `classCrud.update()` in a loop — each call reads stale React state and only the last write survives. Use `classCrud.updateMany(updatedList)` instead.
 - **Empty startTime:** Classes without a schedule have `startTime: ''`. Always guard: `cls.startTime ? formatTime(cls.startTime) : 'Unscheduled'` before formatting.
-- **Specialty matching:** Teacher specialty is an array; use `teacher.specialty.some(s => s.toLowerCase() === style.toLowerCase())` for eligibility checks. Legacy data may have specialty as a string — handle both.
+- **Genre matching:** Teacher `genre` is an array; use `teacher.genre.some(s => s.toLowerCase() === style.toLowerCase())` for eligibility checks. Legacy data may have `genre` as a string — handle both. Teachers with an empty `genre` array are **never** eligible for classes with a genre (no wildcard behavior). `teachersService.getAll()` migrates old `specialty`/`priorityGenres` field names automatically.
 - **PDF clipping:** Always pass the inner `.weekly-grid` element to `html2canvas`, not the `.grid-wrapper`. The wrapper has `overflow-x: auto` which clips the canvas to the visible scroll area.
 - **PDF gradients:** html2canvas does not reliably render `repeating-linear-gradient`. Use solid `background-color` for any fills that must appear in the PDF export.
 - **Excel merge conflicts:** Overlapping classes in the same room column will attempt to merge already-merged cells. Wrap `ws.mergeCells()` in `try/catch` to render without merge rather than throwing.

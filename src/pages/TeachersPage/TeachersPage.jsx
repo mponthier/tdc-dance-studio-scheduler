@@ -39,12 +39,16 @@ export default function TeachersPage({ teachers, teacherCrud, classes }) {
   const sorted = [...teachers].sort((a, b) => {
     let av, bv
     if (sortKey === 'name')      { av = a.name.toLowerCase();  bv = b.name.toLowerCase() }
-    else if (sortKey === 'specialty') {
-      av = (Array.isArray(a.specialty) ? a.specialty.join(', ') : (a.specialty || '')).toLowerCase()
-      bv = (Array.isArray(b.specialty) ? b.specialty.join(', ') : (b.specialty || '')).toLowerCase()
+    else if (sortKey === 'genre') {
+      av = (Array.isArray(a.genre) ? a.genre.join(', ') : (a.genre || '')).toLowerCase()
+      bv = (Array.isArray(b.genre) ? b.genre.join(', ') : (b.genre || '')).toLowerCase()
     }
     else if (sortKey === 'phone') { av = a.phone || ''; bv = b.phone || '' }
     else if (sortKey === 'email') { av = a.email || ''; bv = b.email || '' }
+    else if (sortKey === 'specialties') {
+      av = (Array.isArray(a.specialties) ? a.specialties.join(', ') : '').toLowerCase()
+      bv = (Array.isArray(b.specialties) ? b.specialties.join(', ') : '').toLowerCase()
+    }
     else if (sortKey === 'classCount') { av = classCountMap[a.id] || 0; bv = classCountMap[b.id] || 0 }
     return av < bv ? -mul : av > bv ? mul : 0
   })
@@ -70,7 +74,8 @@ export default function TeachersPage({ teachers, teacherCrud, classes }) {
             <thead>
               <tr>
                 <SortTh col="name">Name</SortTh>
-                <SortTh col="specialty">Genre</SortTh>
+                <SortTh col="genre">Genre</SortTh>
+                <SortTh col="specialties">Specialty</SortTh>
                 <SortTh col="phone">Phone</SortTh>
                 <SortTh col="email">Email</SortTh>
                 <SortTh col="classCount">Classes</SortTh>
@@ -97,7 +102,8 @@ export default function TeachersPage({ teachers, teacherCrud, classes }) {
                       {t.name}
                     </div>
                   </td>
-                  <td>{Array.isArray(t.specialty) ? (t.specialty.join(', ') || '—') : (t.specialty || '—')}</td>
+                  <td>{Array.isArray(t.genre) ? ([...t.genre].sort().join(', ') || '—') : (t.genre || '—')}</td>
+                  <td>{Array.isArray(t.specialties) && t.specialties.length > 0 ? [...t.specialties].sort().join(', ') : '—'}</td>
                   <td>{t.phone || '—'}</td>
                   <td>{t.email || '—'}</td>
                   <td>{classCountMap[t.id] || 0}</td>

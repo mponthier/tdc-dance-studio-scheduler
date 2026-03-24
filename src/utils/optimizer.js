@@ -27,11 +27,19 @@ function hasSkillLevelConflict(candidate, placedClasses) {
 }
 
 function eligibleTeachers(cls, teachers) {
-  return teachers.filter((t) => {
-    if (!cls.style) return true
-    const specs = Array.isArray(t.specialty) ? t.specialty : (t.specialty ? [t.specialty] : [])
-    return specs.length === 0 || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
-  })
+  const style = (cls.style || '').toLowerCase()
+  return teachers
+    .filter((t) => {
+      if (!cls.style) return true
+      const specs = Array.isArray(t.genre) ? t.genre : (t.genre ? [t.genre] : [])
+      return specs.some((s) => s.toLowerCase() === style)
+    })
+    .sort((a, b) => {
+      // Teachers who list this genre as a priority come first
+      const aPriority = (a.specialties || []).some((g) => g.toLowerCase() === style) ? 1 : 0
+      const bPriority = (b.specialties || []).some((g) => g.toLowerCase() === style) ? 1 : 0
+      return bPriority - aPriority
+    })
 }
 
 /**
@@ -59,8 +67,8 @@ export function optimizeSchedule(classes, teachers, rooms) {
       if (!teacher) continue
       // Validate specialty match
       if (cls.style) {
-        const specs = Array.isArray(teacher.specialty) ? teacher.specialty : (teacher.specialty ? [teacher.specialty] : [])
-        if (specs.length > 0 && !specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())) continue
+        const specs = Array.isArray(teacher.genre) ? teacher.genre : (teacher.genre ? [teacher.genre] : [])
+        if (!specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())) continue
       }
       teachersToTry = [teacher]
     } else {

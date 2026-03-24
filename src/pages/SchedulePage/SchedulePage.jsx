@@ -47,8 +47,8 @@ function findAvailableTeacher(cls, day, slotIndex, allTeachers, allClasses) {
     return isTeacherFreeForSlot(cls.teacherId, day, slotIndex, cls.durationMinutes, cls.id, allClasses) ? teacher : null
   }
   return allTeachers.find((t) => {
-    const specs = Array.isArray(t.specialty) ? t.specialty : (t.specialty ? [t.specialty] : [])
-    const matchesStyle = !cls.style || specs.length === 0 || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
+    const specs = Array.isArray(t.genre) ? t.genre : (t.genre ? [t.genre] : [])
+    const matchesStyle = !cls.style || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
     return matchesStyle &&
       isWithinAvailability(t.availability, day, startTime, cls.durationMinutes) &&
       isTeacherFreeForSlot(t.id, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
@@ -59,8 +59,8 @@ function findAvailableTeacher(cls, day, slotIndex, allTeachers, allClasses) {
 function findEligibleTeachers(cls, day, slotIndex, allTeachers, allClasses) {
   const startTime = slotIndexToTime(slotIndex)
   return allTeachers.filter((t) => {
-    const specs = Array.isArray(t.specialty) ? t.specialty : (t.specialty ? [t.specialty] : [])
-    const matchesStyle = !cls.style || specs.length === 0 || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
+    const specs = Array.isArray(t.genre) ? t.genre : (t.genre ? [t.genre] : [])
+    const matchesStyle = !cls.style || specs.some((s) => s.toLowerCase() === cls.style.toLowerCase())
     return matchesStyle &&
       isWithinAvailability(t.availability, day, startTime, cls.durationMinutes) &&
       isTeacherFreeForSlot(t.id, day, slotIndex, cls.durationMinutes, cls.id, allClasses)
@@ -80,6 +80,10 @@ function isTeacherFreeForSlot(teacherId, day, slotIndex, durationMinutes, exclud
       toMins(cls.startTime) < propEnd &&
       toMins(cls.startTime) + cls.durationMinutes > propStart
   )
+}
+
+function fmtStopwatch(secs) {
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
 }
 
 function isRoomFreeForSlot(roomId, day, slotIndex, durationMinutes, excludeClassId, allClasses) {
@@ -214,8 +218,9 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   const gridRef = useRef(null)
   const [selected, setSelected]           = useState(null)
   const [optimizing, setOptimizing] = useState(false)
+  const [stopwatchSecs, setStopwatchSecs] = useState(0)
   const [scheduleProgress, setScheduleProgress] = useState({ messages: [], scheduled: null, total: null })
-  const [solverTimeout, setSolverTimeout] = useState(120)
+  const [solverTimeout, setSolverTimeout] = useState(180)
   const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
   const [filterRoomIds, setFilterRoomIds]       = useState(new Set())
   const [teacherDropOpen, setTeacherDropOpen]   = useState(false)
@@ -239,6 +244,12 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
   }, [contextMenu])
+
+  useEffect(() => {
+    if (!optimizing) return
+    const id = setInterval(() => setStopwatchSecs((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [optimizing])
 
   useEffect(() => {
     if (!teacherDropOpen && !roomDropOpen && !skillDropOpen) return
@@ -302,23 +313,29 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
 
   async function handleAutoSchedule() {
     setOptimizing(true)
+    setStopwatchSecs(0)
     setScheduleProgress({ messages: [], scheduled: null, total: null })
     const t0 = Date.now()
     try {
       let scheduled, unscheduledIds, usedFallback = false
+      let cpSatConnected = false
       try {
-        const result = await optimizeWithCPSAT(classes, teachers, rooms, (p) =>
+        const result = await optimizeWithCPSAT(classes, teachers, rooms, (p) => {
+          cpSatConnected = true
           setScheduleProgress((prev) => ({
             messages: [...prev.messages, p.message],
             scheduled: p.scheduled ?? prev.scheduled,
             total: p.total ?? prev.total,
-          })),
-          solverTimeout
-        )
+          }))
+        }, solverTimeout)
         scheduled = result.scheduled
         unscheduledIds = result.unscheduledIds
       } catch (err) {
-        console.warn('CP-SAT backend error, falling back to greedy:', err)
+        if (cpSatConnected) {
+          // CP-SAT connected and was running — don't override with greedy
+          throw err
+        }
+        console.warn('CP-SAT backend unreachable, falling back to greedy:', err)
         usedFallback = true
         const updated = optimizeSchedule(classes, teachers, rooms)
         scheduled = updated
@@ -338,6 +355,8 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
       if (unscheduledNames.length > 0) summary += ` Could not place: ${unscheduledNames.join(', ')}.`
       summary += ` (${solver}, ${elapsed}s)`
       setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, summary] }))
+    } catch (err) {
+      setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, `Error: ${err.message}`] }))
     } finally {
       setOptimizing(false)
     }
@@ -565,10 +584,8 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                 disabled={optimizing}
                 style={{ fontSize: 13 }}
               >
-                {[60,90,120,150,180,210,240,270,300,330,360,390,420,450,480,510,540,570,600].map((s) => (
-                  <option key={s} value={s}>
-                    {s < 120 ? `${s}s` : s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`}
-                  </option>
+                {[60,120,180,240,300,360,420,480,540,600].map((s) => (
+                  <option key={s} value={s}>{s / 60}m</option>
                 ))}
               </select>
             </label>
@@ -579,6 +596,11 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                   : 'Scheduling…'
                 : 'Auto Schedule'}
             </button>
+            {stopwatchSecs > 0 && (
+              <span style={{ fontSize: 13, color: 'var(--color-text-muted)', minWidth: 36 }}>
+                {fmtStopwatch(stopwatchSecs)}
+              </span>
+            )}
           </div>
         )}
       </div>
