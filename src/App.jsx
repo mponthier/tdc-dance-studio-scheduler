@@ -7,7 +7,14 @@ import RoomsPage from './pages/RoomsPage/RoomsPage'
 import ClassesPage from './pages/ClassesPage/ClassesPage'
 import DocsPage from './pages/DocsPage/DocsPage'
 import { useStudioData } from './hooks/useStudioData'
-import { seedDemoData, exportDataToFile, importDataFromFile } from './services/storage'
+import {
+  seedDemoData,
+  exportDataToFile, importDataFromFile,
+  exportClassesToFile,  importClassesFromFile,
+  exportStudentsToFile, importStudentsFromFile,
+  exportTeachersToFile, importTeachersFromFile,
+  exportRoomsToFile,    importRoomsFromFile,
+} from './services/storage'
 import { optimizeWithCPSAT } from './utils/optimizerCPSAT'
 
 export default function App() {
@@ -77,12 +84,42 @@ export default function App() {
     }
   }, [])
 
+  function handleExport() {
+    switch (activeView) {
+      case 'classes':  exportClassesToFile();  break
+      case 'students': exportStudentsToFile(); break
+      case 'teachers': exportTeachersToFile(); break
+      case 'rooms':    exportRoomsToFile();    break
+      default:         exportDataToFile();     break
+    }
+  }
+
   async function handleImport(file) {
     if (!file) return
-    if (!window.confirm('This will replace all current data. Continue?')) return
+    const { classCrud, studentCrud, teacherCrud, roomCrud } = dataRef.current
     try {
-      await importDataFromFile(file)
-      window.location.reload()
+      switch (activeView) {
+        case 'classes':
+          if (!window.confirm('Replace all class data with the contents of this file?')) return
+          classCrud.loadAll(await importClassesFromFile(file))
+          break
+        case 'students':
+          if (!window.confirm('Replace all student data with the contents of this file?')) return
+          studentCrud.loadAll(await importStudentsFromFile(file))
+          break
+        case 'teachers':
+          if (!window.confirm('Replace all teacher data with the contents of this file?')) return
+          teacherCrud.loadAll(await importTeachersFromFile(file))
+          break
+        case 'rooms':
+          if (!window.confirm('Replace all room data with the contents of this file?')) return
+          roomCrud.loadAll(await importRoomsFromFile(file))
+          break
+        default:
+          if (!window.confirm('This will replace all current data. Continue?')) return
+          await importDataFromFile(file)
+          window.location.reload()
+      }
     } catch (err) {
       alert('Import failed: ' + err.message)
     }
@@ -130,7 +167,7 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      <Sidebar activeView={activeView} onNavigate={setActiveView} onExport={exportDataToFile} onImport={handleImport} />
+      <Sidebar activeView={activeView} onNavigate={setActiveView} onExport={handleExport} onImport={handleImport} />
       <main className="app-main">{renderPage()}</main>
     </div>
   )

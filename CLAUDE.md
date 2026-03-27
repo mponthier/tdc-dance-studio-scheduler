@@ -170,11 +170,11 @@ Uses ExcelJS. Mirrors the room-subdivided weekly grid exactly, with per-day room
 - **Row 1:** Corner cell (spans 2 rows) + day headers merged across that day's available room sub-columns. Even days `#500000`, odd days `#732F2F`, white bold text. Days with no available rooms are omitted entirely.
 - **Row 2:** Room sub-headers (only rooms available on that day). Even days `#F9F0F0`, odd days `#EDE8E8`.
 - **Rows 3+:** 24 time slot rows at 24pt height. All available slots white (`#FFFFFF`). Unavailable slots (outside room availability): solid medium grey `#B0B0B0` fill with white italic "N/A" text centered. Time label in column 1 every 30 minutes in `H:MM AM/PM` format. The cell immediately before each hour boundary has a dashed black `bottom` border (not a `top` on the hour cell — see Hour delineation note above). Day-start columns have a solid medium left border. Thick medium black outer border on all four edges of the full grid.
-- **Class blocks:** Merged cells spanning slot rows, teacher color lightened 78% for fill, full color for font/border. Displays class name, teacher name, and skill level (matching the weekly schedule UI — same three fields as `ClassBlock`). Uses ExcelJS **rich text** (`cell.value = { richText: [...] }`) so each line can carry its own font; the teacher name segment gets `underline: true` when the teacher has the class genre in their `specialties`. `try/catch` around `mergeCells` handles overlapping classes gracefully. **Any future visual change to `ClassBlock` must be mirrored here.**
+- **Class blocks:** Merged cells spanning slot rows. Color follows the `colorMode` parameter: in `'teacher'` mode, teacher color lightened 78% for fill and full color for font/border; in `'skillLevel'` mode, the matching `SKILL_COLORS` hex lightened 72% for fill and full color for font/border (matching `ClassBlock` exactly). Displays class name, teacher name, skill level, and time range. Uses ExcelJS **rich text** (`cell.value = { richText: [...] }`) so each line can carry its own font; the teacher name segment gets `underline: true` when the teacher has the class genre in their `specialties`. `try/catch` around `mergeCells` handles overlapping classes gracefully. **Any future visual change to `ClassBlock` must be mirrored here.**
 - **Sheet 2:** Unscheduled classes as a styled flat list.
 - Uses `dayColStart` map and `getCol(day, ri)` for per-day column offsets (days can have different room counts).
 - Local constants: `GRID_START_HOUR = 15`, `GRID_START_MIN = 30`, `SLOT_MINUTES = 15`, `TOTAL_SLOTS = 24`. `timeToSlot` accounts for the `:30` start offset.
-- Accepts `visibleDays` and `visibleRooms` so filters applied in the UI are respected.
+- Accepts `visibleDays`, `visibleRooms`, and `colorMode` so filters and the color toggle applied in the UI are respected. `colorMode` defaults to `'teacher'` if omitted. `SKILL_COLORS` in `exportSchedule.js` must stay in sync with `SKILL_COLORS` in `ClassBlock.jsx`.
 - Downloads via `Blob` + `URL.createObjectURL`.
 
 ### Export to PDF (`src/utils/exportPDF.js`)
@@ -236,7 +236,7 @@ All tables support sortable columns via `sortKey`/`sortDir` state and a `SortTh`
 - **Teachers:** sortable by Name, Genre, Specialty, Phone, Email, Classes (Availability column not sortable). Genre and Specialty columns display values sorted alphabetically. When adding a new teacher, the color picker pre-selects the first `PRESET_COLORS` entry not already used by another teacher. **Save Teachers / Load Teachers** buttons in the page header via `exportTeachersToFile` / `importTeachersFromFile` (`teachers-YYYY-MM-DD.json`).
 - **Rooms:** sortable by Name, Capacity (Availability column not sortable). Delete uses `ConfirmDialog`. **Save Rooms / Load Rooms** buttons in the page header via `exportRoomsToFile` / `importRoomsFromFile` (`rooms-YYYY-MM-DD.json`).
 
-All per-entity Save/Load functions follow the same pattern: export as `{ version, exportedAt, <entity>: [...] }`, validate the array on import, save to localStorage, then `window.location.reload()`. All are in `src/services/storage.js` and self-contained in their respective page components (no Sidebar involvement).
+Per-entity Save/Load functions are in `src/services/storage.js`. Export format: `{ version, exportedAt, <entity>: [...] }`. Import functions validate that the entity array is present, then resolve with the array — the caller (page component or `App.jsx` Sidebar handler) calls `crud.loadAll(records)` to update state without a page reload. The Sidebar Save/Load buttons also handle entity-specific save/load (see Sidebar section).
 
 Unscheduled classes display "Unscheduled" instead of a time string. Always guard against empty `startTime` before calling `formatTime` or `addMinutes`.
 
@@ -270,11 +270,19 @@ Maroon background (`#500000`). White text throughout. Width: `--sidebar-width: 2
 
 Nav item icons use `color: initial` inline to prevent the parent's `rgba(255,255,255,0.65)` from washing out emoji colors.
 
-**Save Data / Load Data** (`src/services/storage.js` — `exportDataToFile`, `importDataFromFile`):
-- **Save Data**: Exports all four entities (students, teachers, rooms, classes — including full schedule assignments) as `dance-studio-YYYY-MM-DD.json`. Uses `Blob` + `URL.createObjectURL`, same pattern as the Excel export.
-- **Load Data**: Opens a hidden `<input type="file" accept=".json">`. After a `window.confirm()` prompt, calls `importDataFromFile(file)` which validates that all four arrays are present, saves them to localStorage, then `window.location.reload()`.
-- Import error (bad JSON or missing arrays) shows an `alert`. The file input value is reset after each pick so the same file can be re-imported.
-- JSON format: `{ version, exportedAt, students, teachers, rooms, classes }`
+**Save / Load buttons** — context-aware, dispatched from `App.jsx` (`handleExport` / `handleImport`). Button labels update to match the active page ("Save Classes", "Save Teachers", etc. — "Save Data" only on Schedule/Help). Behavior:
+
+| Active page | Save | Load |
+|---|---|---|
+| Classes | `exportClassesToFile()` → `classes-YYYY-MM-DD.json` | `importClassesFromFile` → `classCrud.loadAll` (no reload) |
+| Students | `exportStudentsToFile()` → `students-YYYY-MM-DD.json` | `importStudentsFromFile` → `studentCrud.loadAll` (no reload) |
+| Teachers | `exportTeachersToFile()` → `teachers-YYYY-MM-DD.json` | `importTeachersFromFile` → `teacherCrud.loadAll` (no reload) |
+| Rooms | `exportRoomsToFile()` → `rooms-YYYY-MM-DD.json` | `importRoomsFromFile` → `roomCrud.loadAll` (no reload) |
+| Schedule / Help | `exportDataToFile()` → `dance-studio-YYYY-MM-DD.json` (all four entities) | `importDataFromFile` → `window.location.reload()` |
+
+- Entity-specific imports use `dataRef.current` to access current CRUD methods (avoids stale closure in the async handler).
+- Import error (bad JSON or missing array key) shows an `alert`. File input value is reset after each pick.
+- Entity-specific Load buttons also appear in each page's own header (same functions, redundant for discoverability).
 
 ### CSS conventions
 

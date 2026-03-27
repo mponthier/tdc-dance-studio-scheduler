@@ -503,7 +503,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
             </div>
             <button
               className="btn btn-primary"
-              onClick={() => exportScheduleToExcel(visibleClasses.filter((c) => !hiddenDays.has(c.dayOfWeek)), teachers, rooms, students, visibleDays, visibleRooms)}
+              onClick={() => exportScheduleToExcel(visibleClasses.filter((c) => !hiddenDays.has(c.dayOfWeek)), teachers, rooms, students, visibleDays, visibleRooms, colorMode)}
               disabled={scheduledClasses.length === 0}
             >
               Export to Excel

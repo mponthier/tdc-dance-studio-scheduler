@@ -11,8 +11,11 @@ const NAV_ITEMS = [
   { id: 'docs', label: 'Help', icon: '📖' },
 ]
 
+const ENTITY_LABEL = { classes: 'Classes', students: 'Students', teachers: 'Teachers', rooms: 'Rooms' }
+
 export default function Sidebar({ activeView, onNavigate, onExport, onImport }) {
   const fileInputRef = useRef(null)
+  const entityLabel = ENTITY_LABEL[activeView]
 
   return (
     <aside className="sidebar">
@@ -37,8 +40,8 @@ export default function Sidebar({ activeView, onNavigate, onExport, onImport }) 
       </div>
       <div className="sidebar-spacer" />
       <div className="sidebar-data-actions">
-        <button className="sidebar-data-btn" onClick={onExport}>Save Data</button>
-        <button className="sidebar-data-btn" onClick={() => fileInputRef.current.click()}>Load Data</button>
+        <button className="sidebar-data-btn" onClick={onExport}>Save {entityLabel ?? 'Data'}</button>
+        <button className="sidebar-data-btn" onClick={() => fileInputRef.current.click()}>Load {entityLabel ?? 'Data'}</button>
         <input
           ref={fileInputRef}
           type="file"

@@ -16,6 +16,14 @@ const SLOT_EVEN     = 'FFFFFFFF' // white
 const SLOT_ODD      = 'FFFDF6F6' // warm blush
 const TIME_COL_BG   = 'FFF5F5F5'
 
+// Colors keyed by skill level — must match ClassBlock.jsx SKILL_COLORS
+const SKILL_COLORS = {
+  'Beg/Int (6-10)': '#e67e22',
+  'Beg/Int (10+)':  '#2980b9',
+  'Int/Adv (6-10)': '#27ae60',
+  'Int/Adv (10+)':  '#8e44ad',
+}
+
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 
 function lightenArgb(hex, ratio = 0.78) {
@@ -74,7 +82,7 @@ function slotToLabel(slot) {
 
 // ── Main export ────────────────────────────────────────────────────────────────
 
-export async function exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms) {
+export async function exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms, colorMode = 'teacher') {
   const teacherMap = Object.fromEntries(teachers.map((t) => [t.id, t]))
   const roomMap    = Object.fromEntries(rooms.map((r)    => [r.id, r]))
 
@@ -226,8 +234,9 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
 
       const teacher  = teacherMap[cls.teacherId]
       const room     = roomMap[cls.roomId]
-      const bgArgb   = lightenArgb(teacher?.color, 0.78)
-      const fgArgb   = toArgb(teacher?.color)
+      const skillHex = colorMode === 'skillLevel' ? (SKILL_COLORS[cls.skillLevel] ?? '#888888') : null
+      const bgArgb   = skillHex ? lightenArgb(skillHex, 0.72) : lightenArgb(teacher?.color, 0.78)
+      const fgArgb   = skillHex ? toArgb(skillHex) : toArgb(teacher?.color)
       const isPriority = cls.style && Array.isArray(teacher?.specialties) &&
         teacher.specialties.some((g) => g.toLowerCase() === cls.style.toLowerCase())
 
@@ -283,9 +292,10 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
         duration: cls.durationMinutes,
       })
       row.height = 18
+      const uSkillHex = colorMode === 'skillLevel' ? (SKILL_COLORS[cls.skillLevel] ?? '#888888') : null
       row.eachCell({ includeEmpty: true }, (cell) => {
-        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightenArgb(teacher?.color, 0.82) } }
-        cell.font  = { size: 11, color: { argb: toArgb(teacher?.color) } }
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: uSkillHex ? lightenArgb(uSkillHex, 0.72) : lightenArgb(teacher?.color, 0.82) } }
+        cell.font  = { size: 11, color: { argb: uSkillHex ? toArgb(uSkillHex) : toArgb(teacher?.color) } }
         cell.alignment = { vertical: 'middle', horizontal: 'left' }
         cell.border = { bottom: { style: 'thin', color: { argb: 'FFDDDDDD' } } }
       })
