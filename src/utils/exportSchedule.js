@@ -140,7 +140,7 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
     dayCell.font  = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 }
     dayCell.alignment = { horizontal: 'center', vertical: 'middle' }
     dayCell.border = {
-      left:   isDayStart ? { style: 'medium', color: { argb: DARK_MAROON } } : undefined,
+      left:   isDayStart ? { style: 'thick', color: { argb: DARK_MAROON } } : undefined,
       bottom: { style: 'thin', color: { argb: DARK_MAROON } },
       right:  { style: 'thin', color: { argb: DARK_MAROON } },
     }
@@ -154,7 +154,7 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
       cell.font  = { bold: true, color: { argb: isOdd ? 'FF5A3535' : 'FF500000' }, size: 9 }
       cell.alignment = { horizontal: 'center', vertical: 'middle' }
       cell.border = {
-        left:   (ri === 0 && isDayStart) ? { style: 'medium', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFE0E0E0' } },
+        left:   (ri === 0 && isDayStart) ? { style: 'thick', color: { argb: 'FFC0B0B0' } } : { style: 'thin', color: { argb: 'FFE0E0E0' } },
         right:  { style: 'thin', color: { argb: 'FFE0E0E0' } },
         bottom: { style: 'medium', color: { argb: 'FFC0B0B0' } },
       }
@@ -228,6 +228,8 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
       const room     = roomMap[cls.roomId]
       const bgArgb   = lightenArgb(teacher?.color, 0.78)
       const fgArgb   = toArgb(teacher?.color)
+      const isPriority = cls.style && Array.isArray(teacher?.specialties) &&
+        teacher.specialties.some((g) => g.toLowerCase() === cls.style.toLowerCase())
 
       try {
         if (rowStart < rowEnd) ws.mergeCells(rowStart, col, rowEnd, col)
@@ -235,9 +237,15 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
 
       const cell = ws.getCell(rowStart, col)
       const timeRange = cls.startTime ? `${fmtTime(cls.startTime)}–${fmtTime(addMins(cls.startTime, cls.durationMinutes))}` : null
-      cell.value     = [cls.name, teacher?.name, cls.skillLevel, timeRange].filter(Boolean).join('\n')
+      const baseFont = { size: 10, color: { argb: fgArgb }, bold: true }
+      const lines = [
+        { text: cls.name, font: baseFont },
+        teacher ? { text: teacher.name, font: isPriority ? { ...baseFont, underline: true } : baseFont } : null,
+        cls.skillLevel ? { text: cls.skillLevel, font: baseFont } : null,
+        timeRange ? { text: timeRange, font: baseFont } : null,
+      ].filter(Boolean)
+      cell.value     = { richText: lines.flatMap((seg, i) => i < lines.length - 1 ? [seg, { text: '\n', font: baseFont }] : [seg]) }
       cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } }
-      cell.font      = { size: 10, color: { argb: fgArgb }, bold: true }
       cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true }
       cell.border    = {
         top:    { style: 'medium', color: { argb: fgArgb } },

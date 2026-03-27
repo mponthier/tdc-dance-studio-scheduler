@@ -1,13 +1,24 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import TeacherForm from './TeacherForm'
+import { exportTeachersToFile, importTeachersFromFile } from '../../services/storage'
 
 export default function TeachersPage({ teachers, teacherCrud, classes }) {
   const [modal, setModal] = useState(null)
   const [confirmId, setConfirmId] = useState(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
+  const fileInputRef = useRef(null)
+
+  function handleLoadTeachers(file) {
+    if (!file) return
+    if (!window.confirm('Replace all teacher data with the contents of this file?')) return
+    importTeachersFromFile(file)
+      .then((records) => teacherCrud.loadAll(records))
+      .catch((err) => alert(`Import failed: ${err.message}`))
+  }
 
   function handleSave(data) {
     if (modal === 'add') {
@@ -57,9 +68,19 @@ export default function TeachersPage({ teachers, teacherCrud, classes }) {
     <div>
       <div className="page-header">
         <h1>Teachers</h1>
-        <button className="btn btn-primary" onClick={() => setModal('add')}>
-          + Add Teacher
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-ghost" onClick={exportTeachersToFile}>Save Teachers</button>
+          <button className="btn btn-ghost" onClick={() => fileInputRef.current.click()}>Load Teachers</button>
+          <button className="btn btn-danger" onClick={() => setConfirmClear(true)}>Clear Teachers</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={(e) => { handleLoadTeachers(e.target.files[0]); e.target.value = '' }}
+          />
+          <button className="btn btn-primary" onClick={() => setModal('add')}>+ Add Teacher</button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0 }}>
@@ -145,6 +166,16 @@ export default function TeachersPage({ teachers, teacherCrud, classes }) {
           message="Delete this teacher? Classes assigned to them will show as unassigned."
           onConfirm={() => { teacherCrud.remove(confirmId); setConfirmId(null) }}
           onCancel={() => setConfirmId(null)}
+        />
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Clear All Teachers"
+          message="Delete all teachers? Classes assigned to them will show as unassigned."
+          confirmLabel="Clear"
+          onConfirm={() => { teacherCrud.clearAll(); setConfirmClear(false) }}
+          onCancel={() => setConfirmClear(false)}
         />
       )}
     </div>

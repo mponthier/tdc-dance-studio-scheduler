@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { id: 'students', label: 'Students', icon: '👤' },
   { id: 'teachers', label: 'Teachers', icon: '🎤' },
   { id: 'rooms', label: 'Rooms', icon: '🏠' },
+  { id: 'docs', label: 'Help', icon: '📖' },
 ]
 
 export default function Sidebar({ activeView, onNavigate, onExport, onImport }) {

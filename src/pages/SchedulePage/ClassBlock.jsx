@@ -81,7 +81,7 @@ export default function ClassBlock({ cls, teacher, room, hasConflict, colorMode 
       title={[cls.name, teacher?.name, cls.skillLevel, cls.startTime ? `${formatTime(cls.startTime)}–${formatTime(addMinutes(cls.startTime, cls.durationMinutes))}` : null].filter(Boolean).join('\n')}
     >
       <div className="class-block-name">{cls.name}</div>
-      {teacher && <div className="class-block-meta" style={isPriority ? { fontWeight: 'bold' } : undefined}>{teacher.name}</div>}
+      {teacher && <div className="class-block-meta" style={isPriority ? { fontWeight: 'bold', textDecoration: 'underline' } : undefined}>{teacher.name}</div>}
       {cls.skillLevel && <div className="class-block-meta">{cls.skillLevel}</div>}
       {cls.startTime && (
         <div className="class-block-meta">

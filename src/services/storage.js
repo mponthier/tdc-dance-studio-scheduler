@@ -84,6 +84,122 @@ export function importDataFromFile(file) {
   })
 }
 
+export function exportStudentsToFile() {
+  const date = new Date().toISOString().slice(0, 10)
+  const payload = { version: 1, exportedAt: new Date().toISOString(), students: studentsService.getAll() }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `students-${date}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function importStudentsFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result)
+        if (!Array.isArray(data.students)) throw new Error('File is missing a "students" array.')
+        resolve(data.students)
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = () => reject(new Error('Could not read file.'))
+    reader.readAsText(file)
+  })
+}
+
+export function exportRoomsToFile() {
+  const date = new Date().toISOString().slice(0, 10)
+  const payload = { version: 1, exportedAt: new Date().toISOString(), rooms: roomsService.getAll() }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `rooms-${date}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function importRoomsFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result)
+        if (!Array.isArray(data.rooms)) throw new Error('File is missing a "rooms" array.')
+        resolve(data.rooms)
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = () => reject(new Error('Could not read file.'))
+    reader.readAsText(file)
+  })
+}
+
+export function exportClassesToFile() {
+  const date = new Date().toISOString().slice(0, 10)
+  const payload = { version: 1, exportedAt: new Date().toISOString(), classes: classesService.getAll() }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `classes-${date}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function importClassesFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result)
+        if (!Array.isArray(data.classes)) throw new Error('File is missing a "classes" array.')
+        resolve(data.classes)
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = () => reject(new Error('Could not read file.'))
+    reader.readAsText(file)
+  })
+}
+
+export function exportTeachersToFile() {
+  const date = new Date().toISOString().slice(0, 10)
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    teachers: teachersService.getAll(),
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `teachers-${date}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function importTeachersFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result)
+        if (!Array.isArray(data.teachers)) {
+          throw new Error('File is missing a "teachers" array.')
+        }
+        resolve(data.teachers)
+      } catch (err) {
+        reject(err)
+      }
+    }
+    reader.onerror = () => reject(new Error('Could not read file.'))
+    reader.readAsText(file)
+  })
+}
+
 export function seedDemoData() {
   if (studentsService.getAll().length > 0) return
 
@@ -210,7 +326,7 @@ export function seedDemoData() {
     mk('Pointe Company',           'Pointe',           60, IA10),  // 60m
     mk('Pointe Advanced',          'Pointe',          120, IA10),  // 120m
     // Musical Theater (4)
-    mk('Mini Musical Theater',     'Musical Theater',  60, BI6),   // 60m
+    mk('Mini Musical Theater',     'Musical Theater',  45, BI6),   // 45m
     mk('Musical Theater',          'Musical Theater',  60, BI10),  // 60m
     mk('Teen Musical Theater',     'Musical Theater',  60, BI10),  // 60m
     mk('Musical Theater Advanced', 'Musical Theater',  60, IA10),  // 60m
@@ -222,7 +338,7 @@ export function seedDemoData() {
     mk('Hip Hop III',              'Hip Hop',          60, IA6),   // 60m
     mk('Hip Hop Elite',            'Hip Hop',          45, IA6),   // 45m
     mk('Hip Hop Company',          'Hip Hop',          75, IA10),  // 75m
-    mk('Hip Hop Advanced',         'Hip Hop',         120, IA10),  // 120m
+    mk('Hip Hop Advanced',         'Hip Hop',          90, IA10),  // 90m
     // Jazz (8)
     mk('Mini Jazz',                'Jazz',             30, BI6),   // 30m
     mk('Jazz Beginners',           'Jazz',             45, BI6),   // 45m
@@ -233,13 +349,13 @@ export function seedDemoData() {
     mk('Jazz Advanced',            'Jazz',             75, IA10),  // 75m
     mk('Teen Jazz',                'Jazz',             90, BI10),  // 90m
     // Drill (4)
-    mk('Drill Beginners',          'Drill',            60, BI6),   // 60m
+    mk('Drill Beginners',          'Drill',            45, BI6),   // 45m
     mk('Drill Team Prep',          'Drill',            60, BI10),  // 60m
-    mk('Drill Advanced',           'Drill',           105, IA10),  // 105m
+    mk('Drill Advanced',           'Drill',            90, IA10),  // 90m
     mk('Drill Company',            'Drill',            90, IA10),  // 90m
     // All-Star (4)
-    mk('Mini All-Star',            'All-Star',         60, BI6),   // 60m
-    mk('All-Star Junior',          'All-Star',         60, BI6),   // 60m
+    mk('Mini All-Star',            'All-Star',         45, BI6),   // 45m
+    mk('All-Star Junior',          'All-Star',         45, BI6),   // 45m
     mk('All-Star Company',         'All-Star',         90, IA10),  // 90m
     mk('All-Star Elite',           'All-Star',         60, IA6),   // 60m
     // Tap (6)
@@ -247,7 +363,7 @@ export function seedDemoData() {
     mk('Tap Beginners',            'Tap',              60, BI10),  // 60m
     mk('Tap II',                   'Tap',              60, IA6),   // 60m
     mk('Teen Tap',                 'Tap',              60, BI10),  // 60m
-    mk('Tap Company',              'Tap',              60, BI6),   // 60m
+    mk('Tap Company',              'Tap',              45, BI6),   // 45m
     mk('Tap Advanced',             'Tap',              90, IA10),  // 90m
   ]
   classesService.save(classes)

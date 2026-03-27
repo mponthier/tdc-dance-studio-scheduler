@@ -1,13 +1,24 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import RoomForm from './RoomForm'
+import { exportRoomsToFile, importRoomsFromFile } from '../../services/storage'
 
 export default function RoomsPage({ rooms, roomCrud }) {
   const [modal, setModal] = useState(null)
   const [confirmId, setConfirmId] = useState(null)
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
+  const [confirmClear, setConfirmClear] = useState(false)
+  const fileInputRef = useRef(null)
+
+  function handleLoadRooms(file) {
+    if (!file) return
+    if (!window.confirm('Replace all room data with the contents of this file?')) return
+    importRoomsFromFile(file)
+      .then((records) => roomCrud.loadAll(records))
+      .catch((err) => alert(`Import failed: ${err.message}`))
+  }
 
   function handleSave(data) {
     if (modal === 'add') {
@@ -44,9 +55,19 @@ export default function RoomsPage({ rooms, roomCrud }) {
     <div>
       <div className="page-header">
         <h1>Rooms</h1>
-        <button className="btn btn-primary" onClick={() => setModal('add')}>
-          + Add Room
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-ghost" onClick={exportRoomsToFile}>Save Rooms</button>
+          <button className="btn btn-ghost" onClick={() => fileInputRef.current.click()}>Load Rooms</button>
+          <button className="btn btn-danger" onClick={() => setConfirmClear(true)}>Clear Rooms</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={(e) => { handleLoadRooms(e.target.files[0]); e.target.value = '' }}
+          />
+          <button className="btn btn-primary" onClick={() => setModal('add')}>+ Add Room</button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0 }}>
@@ -108,6 +129,16 @@ export default function RoomsPage({ rooms, roomCrud }) {
           message="Delete this room? Classes assigned to it will show as unassigned."
           onConfirm={() => { roomCrud.remove(confirmId); setConfirmId(null) }}
           onCancel={() => setConfirmId(null)}
+        />
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Clear All Rooms"
+          message="Delete all rooms? Classes assigned to them will show as unassigned."
+          confirmLabel="Clear"
+          onConfirm={() => { roomCrud.clearAll(); setConfirmClear(false) }}
+          onCancel={() => setConfirmClear(false)}
         />
       )}
     </div>

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import ClassForm from './ClassForm'
 import EnrollmentPanel from './EnrollmentPanel'
 import { findAllConflictingIds } from '../../utils/conflicts'
 import { formatTime, addMinutes, DAYS } from '../../utils/timeHelpers'
+import { exportClassesToFile, importClassesFromFile } from '../../services/storage'
 
 const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d, i]))
 const SKILL_BADGE = {
@@ -46,6 +47,7 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
   const [modal, setModal] = useState(null)
   const [enrollClass, setEnrollClass] = useState(null)
   const [confirmId, setConfirmId] = useState(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
   const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
@@ -54,6 +56,15 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
   const [dropOpen, setDropOpen] = useState(false)
   const [skillDropOpen, setSkillDropOpen] = useState(false)
   const [durationDropOpen, setDurationDropOpen] = useState(false)
+  const fileInputRef = useRef(null)
+
+  function handleLoadClasses(file) {
+    if (!file) return
+    if (!window.confirm('Replace all class data with the contents of this file?')) return
+    importClassesFromFile(file)
+      .then((records) => classCrud.loadAll(records))
+      .catch((err) => alert(`Import failed: ${err.message}`))
+  }
 
   useEffect(() => {
     if (!dropOpen && !skillDropOpen && !durationDropOpen) return
@@ -240,6 +251,16 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
               </div>
             )}
           </div>
+          <button className="btn btn-ghost" onClick={exportClassesToFile}>Save Classes</button>
+          <button className="btn btn-ghost" onClick={() => fileInputRef.current.click()}>Load Classes</button>
+          <button className="btn btn-danger" onClick={() => setConfirmClear(true)}>Clear Classes</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={(e) => { handleLoadClasses(e.target.files[0]); e.target.value = '' }}
+          />
           <button className="btn btn-primary" onClick={() => setModal('add')}>
             + Add Class
           </button>
@@ -362,6 +383,16 @@ export default function ClassesPage({ classes, teachers, rooms, students, classC
           message="Delete this class? All enrollments will be lost."
           onConfirm={() => { classCrud.remove(confirmId); setConfirmId(null) }}
           onCancel={() => setConfirmId(null)}
+        />
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Clear All Classes"
+          message="Delete all classes? This cannot be undone."
+          confirmLabel="Clear"
+          onConfirm={() => { classCrud.clearAll(); setConfirmClear(false) }}
+          onCancel={() => setConfirmClear(false)}
         />
       )}
     </div>

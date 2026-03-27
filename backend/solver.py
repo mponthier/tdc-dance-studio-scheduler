@@ -226,8 +226,14 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
                   "Thursday": 3, "Friday": 2, "Saturday": 1, "Sunday": 0}
     # PRIORITY_BONUS sits above max day score so priority beats day preference,
     # but BIG_M >> PRIORITY_BONUS so total classes always dominates.
-    PRIORITY_BONUS = max(DAY_WEIGHT.values()) + 1   # 7
-    BIG_M = len(unscheduled) * (PRIORITY_BONUS + max(DAY_WEIGHT.values())) + 1
+    # Set to 10x the max day weight so specialty matching strongly dominates day preference.
+    PRIORITY_BONUS = (max(DAY_WEIGHT.values()) + 1) * 10   # 70
+    # TEACHER_DAY_WEIGHT: penalty per (teacher, day) pair with at least one class.
+    # Weight of 1 keeps it below day-preference changes but still nudges the solver
+    # to concentrate each teacher's classes onto fewer days.
+    TEACHER_DAY_WEIGHT = 1
+    max_teacher_day_pairs = len(all_teachers) * len(DAYS)
+    BIG_M = len(unscheduled) * (PRIORITY_BONUS + max(DAY_WEIGHT.values())) + max_teacher_day_pairs * TEACHER_DAY_WEIGHT + 1
 
     # Per-teacher priority genre sets (lower-cased for case-insensitive match)
     teacher_priority = {
@@ -255,7 +261,27 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
         for i, a in enumerate(assignments)
         if a["style"] and a["style"] in teacher_priority.get(a["teacher_id"], set())
     )
-    model.maximize(sum(class_scheduled_vars) * BIG_M + priority_score * PRIORITY_BONUS + day_score)
+
+    # Teacher-day minimization: one BoolVar per (teacher, day) that has feasible assignments.
+    # var = 1 iff the teacher is assigned at least one class on that day.
+    teacher_day_vars = {}
+    by_teacher_day = defaultdict(list)
+    for i, a in enumerate(assignments):
+        by_teacher_day[(a["teacher_id"], a["day"])].append(i)
+    for (tid, day), idxs in by_teacher_day.items():
+        v = model.new_bool_var(f"td_{tid}_{day}")
+        for i in idxs:
+            model.add(v >= assign_vars[i])                              # v=1 if any assignment selected
+        model.add_bool_or([assign_vars[i] for i in idxs] + [v.negated()])  # v=0 if none selected
+        teacher_day_vars[(tid, day)] = v
+    teacher_days_cost = sum(teacher_day_vars.values()) if teacher_day_vars else 0
+
+    model.maximize(
+        sum(class_scheduled_vars) * BIG_M
+        + priority_score * PRIORITY_BONUS
+        + day_score
+        - teacher_days_cost * TEACHER_DAY_WEIGHT
+    )
 
     # ------------------------------------------------------------------ #
     # Solve

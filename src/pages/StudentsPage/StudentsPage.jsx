@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import StudentForm from './StudentForm'
+import { exportStudentsToFile, importStudentsFromFile } from '../../services/storage'
 
 const SKILL_BADGE = {
   'Beg/Int (6-10)': 'badge-skill-1',
@@ -15,10 +16,20 @@ const SKILL_LEVELS = Object.keys(SKILL_BADGE)
 export default function StudentsPage({ students, studentCrud }) {
   const [modal, setModal] = useState(null)
   const [confirmId, setConfirmId] = useState(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
   const [filterSkills, setFilterSkills] = useState(new Set())
   const [dropOpen, setDropOpen] = useState(false)
+  const fileInputRef = useRef(null)
+
+  function handleLoadStudents(file) {
+    if (!file) return
+    if (!window.confirm('Replace all student data with the contents of this file?')) return
+    importStudentsFromFile(file)
+      .then((records) => studentCrud.loadAll(records))
+      .catch((err) => alert(`Import failed: ${err.message}`))
+  }
 
   useEffect(() => {
     if (!dropOpen) return
@@ -105,6 +116,16 @@ export default function StudentsPage({ students, studentCrud }) {
               </div>
             )}
           </div>
+          <button className="btn btn-ghost" onClick={exportStudentsToFile}>Save Students</button>
+          <button className="btn btn-ghost" onClick={() => fileInputRef.current.click()}>Load Students</button>
+          <button className="btn btn-danger" onClick={() => setConfirmClear(true)}>Clear Students</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={(e) => { handleLoadStudents(e.target.files[0]); e.target.value = '' }}
+          />
           <button className="btn btn-primary" onClick={() => setModal('add')}>
             + Add Student
           </button>
@@ -167,6 +188,16 @@ export default function StudentsPage({ students, studentCrud }) {
           message="Delete this student? They will also be unenrolled from all classes."
           onConfirm={() => { studentCrud.remove(confirmId); setConfirmId(null) }}
           onCancel={() => setConfirmId(null)}
+        />
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Clear All Students"
+          message="Delete all students? This cannot be undone."
+          confirmLabel="Clear"
+          onConfirm={() => { studentCrud.clearAll(); setConfirmClear(false) }}
+          onCancel={() => setConfirmClear(false)}
         />
       )}
     </div>

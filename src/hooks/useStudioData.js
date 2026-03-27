@@ -30,6 +30,14 @@ function makeCrud(getState, setState, service) {
       setState(next)
       service.save(next)
     },
+    clearAll() {
+      setState([])
+      service.save([])
+    },
+    loadAll(records) {
+      setState(records)
+      service.save(records)
+    },
   }
 }
 

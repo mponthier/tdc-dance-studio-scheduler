@@ -4,8 +4,6 @@ import ClassDetailPanel from './ClassDetailPanel'
 import { DAYS, GRID_START_HOUR, GRID_START_MIN, TOTAL_SLOTS, SLOT_MINUTES, durationToRowSpan, timeToRow } from '../../utils/timeHelpers'
 import { findAllConflictingIds } from '../../utils/conflicts'
 import { isWithinAvailability } from '../../utils/availability'
-import { optimizeSchedule } from '../../utils/optimizer'
-import { optimizeWithCPSAT } from '../../utils/optimizerCPSAT'
 import { exportScheduleToExcel } from '../../utils/exportSchedule'
 import { exportScheduleToPDF } from '../../utils/exportPDF'
 import Modal from '../../components/Modal'
@@ -214,12 +212,9 @@ function TimeLabel({ slotIndex }) {
   )
 }
 
-export default function SchedulePage({ classes, teachers, rooms, students, classCrud }) {
+export default function SchedulePage({ classes, teachers, rooms, students, classCrud, optimizing, stopwatchSecs, scheduleProgress, setScheduleProgress, onAutoSchedule }) {
   const gridRef = useRef(null)
   const [selected, setSelected]           = useState(null)
-  const [optimizing, setOptimizing] = useState(false)
-  const [stopwatchSecs, setStopwatchSecs] = useState(0)
-  const [scheduleProgress, setScheduleProgress] = useState({ messages: [], scheduled: null, total: null })
   const [solverTimeout, setSolverTimeout] = useState(180)
   const [filterTeacherIds, setFilterTeacherIds] = useState(new Set())
   const [filterRoomIds, setFilterRoomIds]       = useState(new Set())
@@ -244,12 +239,6 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
   }, [contextMenu])
-
-  useEffect(() => {
-    if (!optimizing) return
-    const id = setInterval(() => setStopwatchSecs((s) => s + 1), 1000)
-    return () => clearInterval(id)
-  }, [optimizing])
 
   useEffect(() => {
     if (!teacherDropOpen && !roomDropOpen && !skillDropOpen) return
@@ -309,57 +298,6 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
 
   function handleClearSchedule() {
     classCrud.updateMany(classes.map((c) => ({ ...c, dayOfWeek: '', startTime: '', roomId: '', teacherId: '' })))
-  }
-
-  async function handleAutoSchedule() {
-    setOptimizing(true)
-    setStopwatchSecs(0)
-    setScheduleProgress({ messages: [], scheduled: null, total: null })
-    const t0 = Date.now()
-    try {
-      let scheduled, unscheduledIds, usedFallback = false
-      let cpSatConnected = false
-      try {
-        const result = await optimizeWithCPSAT(classes, teachers, rooms, (p) => {
-          cpSatConnected = true
-          setScheduleProgress((prev) => ({
-            messages: [...prev.messages, p.message],
-            scheduled: p.scheduled ?? prev.scheduled,
-            total: p.total ?? prev.total,
-          }))
-        }, solverTimeout)
-        scheduled = result.scheduled
-        unscheduledIds = result.unscheduledIds
-      } catch (err) {
-        if (cpSatConnected) {
-          // CP-SAT connected and was running — don't override with greedy
-          throw err
-        }
-        console.warn('CP-SAT backend unreachable, falling back to greedy:', err)
-        usedFallback = true
-        const updated = optimizeSchedule(classes, teachers, rooms)
-        scheduled = updated
-        unscheduledIds = classes
-          .filter((c) => (!c.dayOfWeek || !c.startTime) && !updated.find((u) => u.id === c.id))
-          .map((c) => c.id)
-      }
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
-      if (scheduled.length > 0) classCrud.updateMany(scheduled)
-      const unscheduledNames = unscheduledIds
-        .map((id) => classes.find((c) => c.id === id)?.name)
-        .filter(Boolean)
-      const solver = usedFallback ? 'greedy fallback' : 'CP-SAT'
-      let summary = scheduled.length > 0
-        ? `Scheduled ${scheduled.length} class${scheduled.length !== 1 ? 'es' : ''}.`
-        : 'No classes could be scheduled.'
-      if (unscheduledNames.length > 0) summary += ` Could not place: ${unscheduledNames.join(', ')}.`
-      summary += ` (${solver}, ${elapsed}s)`
-      setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, summary] }))
-    } catch (err) {
-      setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, `Error: ${err.message}`] }))
-    } finally {
-      setOptimizing(false)
-    }
   }
 
   function handleContextMenu(e, cls) {
@@ -805,7 +743,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
           title="Auto Schedule"
           message={`Auto scheduling may take up to ${solverTimeout < 120 ? `${solverTimeout}s` : solverTimeout % 60 === 0 ? `${solverTimeout / 60} minute${solverTimeout / 60 !== 1 ? 's' : ''}` : `${Math.floor(solverTimeout / 60)}m ${solverTimeout % 60}s`} to complete. Proceed?`}
           confirmLabel="Schedule"
-          onConfirm={() => { setConfirmAutoSchedule(false); handleAutoSchedule() }}
+          onConfirm={() => { setConfirmAutoSchedule(false); onAutoSchedule(solverTimeout) }}
           onCancel={() => setConfirmAutoSchedule(false)}
         />
       )}
