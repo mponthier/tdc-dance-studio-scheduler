@@ -5,12 +5,12 @@ import userGuideRaw from '../../../USER-GUIDE.md?raw'
 import './DocsPage.css'
 
 const TABS = [
-  { id: 'userguide', label: 'User Guide', raw: userGuideRaw },
   { id: 'readme',    label: 'README',     raw: readmeRaw    },
+  { id: 'userguide', label: 'User Guide', raw: userGuideRaw },
 ]
 
 export default function DocsPage() {
-  const [activeTab, setActiveTab] = useState('userguide')
+  const [activeTab, setActiveTab] = useState('readme')
   const tab = TABS.find((t) => t.id === activeTab)
   const html = useMemo(() => marked.parse(tab.raw), [tab])
 

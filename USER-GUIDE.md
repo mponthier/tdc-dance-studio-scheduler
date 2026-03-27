@@ -126,11 +126,28 @@ Left-clicking opens a read-only **Class Detail Panel** showing genre, time range
 
 Click **Auto Schedule** to run the CP-SAT optimizer. A confirmation dialog appears before the solver starts. The process may take up to 2 minutes. When complete, a result message shows how many classes were scheduled, how many were assigned to a specialty teacher, and the elapsed time.
 
-The solver respects these hard rules:
-- Teacher must teach the class genre
-- Teacher and room must be available during the class time
-- No two classes can share the same teacher, room, or skill level at the same time
-- All classes must fit within the 3:30 PM – 9:30 PM grid
+The solver respects the following rules:
+
+**Hard constraints** (all must be satisfied):
+
+| # | Rule |
+|---|---|
+| 1 | **Teacher genre match** — the teacher's genre list must include the class genre. Teachers with no genres are never eligible. |
+| 2 | **Teacher availability** — the class must fall within the teacher's availability window (a class may start or end exactly at the boundary). |
+| 3 | **Room availability** — the class must fall within the room's availability window (same rule). |
+| 4 | **Teacher no-overlap** — a teacher cannot teach two classes at the same time on the same day. |
+| 5 | **Room no-overlap** — two classes cannot share a room at the same time on the same day. |
+| 6 | **Skill level no-overlap** — two classes at the same skill level cannot overlap on the same day (in any room). |
+| 7 | **Grid boundaries** — all classes must start and end within 3:30 PM – 9:30 PM, snapped to 15-minute slots. |
+| 8 | **Pre-assigned teacher respected** — if a class already has a teacher, only that teacher is used; if their genre no longer matches, the class is skipped. |
+| 9 | **Pre-assigned room preferred** — if a class already has a room, that room is tried first. |
+
+**Soft preferences** (optimizer tries to satisfy in this priority order):
+
+1. Maximize the number of classes scheduled
+2. Prefer assigning teachers who have the class genre listed as a Specialty for Scheduling (shown bold & underlined on the block)
+3. Prefer scheduling classes earlier in the week (Monday before Tuesday, etc.)
+4. Minimize the number of distinct teacher–day combinations
 
 ### Clear Schedule
 

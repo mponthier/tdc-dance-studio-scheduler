@@ -38,7 +38,7 @@ Then refresh the page.
 
 ## Architecture
 
-**React SPA** with a required Python/FastAPI backend for CP-SAT scheduling. All state is persisted in `localStorage`. No routing library — active view is managed via `useState('schedule')` in `App.jsx`. Auto Schedule requires the CP-SAT backend — if unreachable, it shows an error.
+**React SPA** with a required Python/FastAPI backend for CP-SAT scheduling. All state is persisted in `localStorage`. No routing library — active view is managed via `useState('schedule')` in `App.jsx`. Auto Schedule requires the CP-SAT backend — if unreachable, it shows an error. Six pages: Schedule, Classes, Teachers, Students, Rooms, and Help (DocsPage).
 
 ### Data flow
 
@@ -53,9 +53,10 @@ Then refresh the page.
 | `src/utils/conflicts.js` | `detectConflicts(candidate, allClasses)` — used in `ClassForm` for real-time warnings. `findAllConflictingIds(allClasses)` — O(n²) scan used for conflict badges on the Classes list and `ClassBlock` tinting. |
 | `src/utils/availability.js` | `isWithinAvailability(availability, dayOfWeek, startTime, durationMinutes)` — returns true if the class fits inside an availability window. Applies a **1-minute inset**: checks `classStart+1` through `classEnd-1`, so a class can start/end exactly at an availability boundary. `detectAvailabilityWarnings(candidate, teacher, room)` — called alongside `detectConflicts` in `ClassForm`. |
 | `src/utils/timeHelpers.js` | Grid positioning math: `timeToRow`, `durationToRowSpan`. Constants: `DAYS`, `GRID_START_HOUR` (15), `GRID_START_MIN` (30), `GRID_END_HOUR` (21), `GRID_END_MIN` (30), `SLOT_MINUTES` (15), `TOTAL_SLOTS` (24). |
-| `src/utils/optimizerCPSAT.js` | `optimizeWithCPSAT(classes, teachers, rooms)` — POSTs to the CP-SAT backend (`http://localhost:8000/api/optimize`), merges results back onto class objects. 120s fetch timeout. |
+| `src/utils/optimizerCPSAT.js` | `optimizeWithCPSAT(classes, teachers, rooms, onProgress, timeoutSeconds)` — calls the CP-SAT backend and merges results. When `onProgress` is provided, uses the streaming SSE endpoint (`/api/optimize/stream`) and fires `{ message, scheduled, total, elapsed }` on each improved solution; otherwise calls `POST /api/optimize` (non-streaming). Fetch timeout = `(timeoutSeconds + 300) * 1000` ms (5-min buffer on top of solver time). Also exports `isCPSATAvailable()` — hits `/api/health` with a 2s timeout. |
 | `src/utils/exportSchedule.js` | `exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms)` — ExcelJS-based export that mirrors the room-subdivided weekly grid. |
 | `src/utils/exportPDF.js` | `exportScheduleToPDF(gridElement)` — html2canvas + jsPDF export. Captures the inner `.weekly-grid` element (not the overflow wrapper) to avoid clipping. Uses a custom page size wide enough to fit the full grid aspect ratio. |
+| `src/pages/DocsPage/DocsPage.jsx` | Help page. Renders `README.md` and `USER-GUIDE.md` as tabbed markdown (using the `marked` library). README tab is shown first by default. Imports the markdown files as raw strings via Vite's `?raw` import. |
 
 ### Data schema (localStorage)
 
@@ -95,7 +96,7 @@ The UI label is **Genre** everywhere. Teacher `genre` is stored as an array of s
 
 `teachersService.getAll()` includes a migration shim: if a loaded teacher record is missing `genre`, it copies the value from `specialty` (old field name); if missing `specialties`, it copies from `priorityGenres` (old field name). This preserves existing localStorage data after the field renames.
 
-**Specialty for Scheduling (`specialties`):** Each teacher has a `specialties: string[]` field (a subset of their `genre`). Configured in `TeacherForm` under a **"Specialty for Scheduling"** checkbox section that only shows genres the teacher can already teach (sorted alphabetically); unchecking a genre automatically removes it from `specialties`. In the greedy optimizer (`optimizer.js`), eligible teachers are sorted so those with the class genre in their `specialties` are tried first. In the CP-SAT solver (`solver.py`), a `priority_score` term is added to the objective (weighted by `PRIORITY_BONUS = 70`, 10× the max day weight, between day score and `BIG_M`) to prefer assigning classes to specialty-for-scheduling teachers. `BIG_M` is recalculated as `len(unscheduled) * (PRIORITY_BONUS + max_day_weight) + 1` to maintain objective hierarchy: more classes > priority teacher matches > earlier days. In `ClassBlock`, the teacher name is rendered bold when the assigned teacher has the class genre in their `specialties`.
+**Specialty for Scheduling (`specialties`):** Each teacher has a `specialties: string[]` field (a subset of their `genre`). Configured in `TeacherForm` under a **"Specialty for Scheduling"** checkbox section that only shows genres the teacher can already teach (sorted alphabetically); unchecking a genre automatically removes it from `specialties`. In the CP-SAT solver (`solver.py`), a `priority_score` term is added to the objective (weighted by `PRIORITY_BONUS = 70`, 10× the max day weight, between day score and `BIG_M`) to prefer assigning classes to specialty-for-scheduling teachers. `BIG_M` is recalculated as `len(unscheduled) * (PRIORITY_BONUS + max_day_weight) + 1` to maintain objective hierarchy: more classes > priority teacher matches > earlier days. In `ClassBlock`, the teacher name is rendered bold and underlined when the assigned teacher has the class genre in their `specialties`.
 
 ### Weekly grid (Schedule page)
 
@@ -131,7 +132,11 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 **Teacher, room & skill level filters:** Multi-select dropdown panels in the page header. Each filter is a button that opens a checkbox list. The button label shows "All …" when nothing is selected, the item name when exactly one is selected, or "N …" for multiple. A "Clear selection" link appears inside the dropdown when any items are chosen. Clicking outside closes any open dropdown. Room filter also controls which room sub-columns are rendered (`visibleRooms`). State: `filterTeacherIds`, `filterRoomIds`, and `filterSkillLevels` are `Set` objects. Skill level filter matches on `c.skillLevel || ''`.
 
-**Auto Schedule button:** Clicking opens a `ConfirmDialog` ("Auto scheduling may take up to 2 minutes to complete. Proceed?", confirm label "Schedule") before running. Async. Calls `optimizeWithCPSAT`; if the backend is unreachable or times out (120s), an error message is shown. Shows a `cursor: wait` on the page while running ("Scheduling…" button label). Result message shows count, specialty match count, and elapsed time in seconds.
+**Auto Schedule button:** Clicking opens a `ConfirmDialog` (confirm label "Schedule") with a dynamic message based on the current `solverTimeout` value. Async. Calls `optimizeWithCPSAT` with an `onProgress` callback that updates `scheduleProgress` state for real-time progress display. If the backend is unreachable or the fetch times out, an error message is shown. Shows a `cursor: wait` and "Scheduling…" button label while running. Result message format: `"Scheduled N classes. M assigned to a specialty teacher. Could not place: X, Y. (CP-SAT, 3.2s)"`. The "Could not place" and specialty sentences are omitted when not applicable.
+
+**Solver Timeout control:** A `<select>` dropdown in the toolbar (label "Timeout") lets the user choose the solver time limit. Default is **180 seconds**. `solverTimeout` state in `SchedulePage` is passed to `onAutoSchedule(solverTimeout)`. Fetch timeout is `(timeoutSeconds + 300) * 1000` ms.
+
+**Streaming progress:** `App.jsx` maintains `scheduleProgress` state (`{ messages: [], scheduled: null, total: null }`). The `onProgress` callback from `optimizeWithCPSAT` pushes updates into this state; `SchedulePage` renders progress messages while the solver runs.
 
 **Clear Schedule button:** Opens a `ConfirmDialog` (title "Confirm Clear", confirm label "Clear") before resetting all classes to `dayOfWeek: '', startTime: '', roomId: '', teacherId: ''`.
 
@@ -156,9 +161,7 @@ Drop validation enforces three additional constraints via helpers in `SchedulePa
 
 **Class detail panel:** Left-clicking a class block opens `ClassDetailPanel` — a read-only overlay (`.detail-overlay`) showing the class name, genre, day, time range, duration, teacher, room, and enrolled students list. Clicking outside the panel or the × button closes it.
 
-**Optimize result message:** Shown below the grid after Auto Schedule. Format: `"Scheduled N classes. M assigned to a specialty teacher. (CP-SAT, 3.2s)"` or `"(greedy fallback, 0.1s)"`. The specialty sentence is omitted when no classes were scheduled. Persists until dismissed with a Clear button.
-
-`ClassBlock` displays class name, teacher name, and skill level (room is omitted — it's already shown as the column header). The teacher name is rendered **bold and underlined** when the assigned teacher has the class genre in their `specialties` (Specialty for Scheduling). Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip matches the same three fields. Block coloring is controlled by `colorMode` (see Color mode toggle above).
+`ClassBlock` displays class name, teacher name, skill level, and time range (start–end, shown when `cls.startTime` is set). Room is omitted — it's already shown as the column header. The teacher name is rendered **bold and underlined** when the assigned teacher has the class genre in their `specialties` (Specialty for Scheduling). Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip includes the same fields plus the time range. Block coloring is controlled by `colorMode` (see Color mode toggle above).
 
 ### Export to Excel (`src/utils/exportSchedule.js`)
 
@@ -186,7 +189,7 @@ Uses html2canvas + jsPDF.
 
 ### CP-SAT scheduling backend (`backend/`)
 
-Optional Python FastAPI backend that replaces the greedy optimizer with OR-Tools CP-SAT. The frontend falls back to greedy automatically if the backend is unreachable.
+Optional Python FastAPI backend for OR-Tools CP-SAT scheduling. If the backend is unreachable or times out, `handleAutoSchedule` in `App.jsx` catches the error and shows an error message — there is no greedy fallback.
 
 **Setup & run:**
 ```bash
@@ -198,17 +201,19 @@ uvicorn main:app --port 8000
 ```
 
 **Files:**
-- `backend/main.py` — FastAPI app. CORS allows `localhost:5173` and `localhost:5174`. Custom HTTP middleware adds `Access-Control-Allow-Private-Network: true` to all responses (required by Chrome for cross-port localhost requests). Endpoints: `POST /api/optimize`, `GET /api/health`.
-- `backend/solver.py` — CP-SAT model. Enumerates all feasible (class, day, start, room, teacher) assignments filtered by availability (1-minute inset) and genre eligibility. Uses **optional interval variables + `AddNoOverlap`** for room, teacher, and skill-level conflict constraints (much more efficient than pairwise). Pre-filters assignments that conflict with already-scheduled classes. Objective (in priority order): maximize classes scheduled (primary, `BIG_M`) → prefer `specialties`-matched teacher assignments (`PRIORITY_BONUS = 70`) → prefer earlier days Monday→Sunday → minimize distinct (teacher, day) working pairs (`TEACHER_DAY_WEIGHT = 1`). `BIG_M` is computed to dominate all lower-priority terms combined, including the teacher-day upper bound. Solver time limit: 115s.
+- `backend/main.py` — FastAPI app. CORS allows `localhost:5173` and `localhost:5174`. Custom HTTP middleware adds `Access-Control-Allow-Private-Network: true` to all responses (required by Chrome for cross-port localhost requests). Endpoints: `POST /api/optimize`, `POST /api/optimize/stream` (SSE), `GET /api/health`.
+- `backend/solver.py` — CP-SAT model. Enumerates all feasible (class, day, start, room, teacher) assignments filtered by availability (1-minute inset) and genre eligibility. Uses **optional interval variables + `AddNoOverlap`** for room, teacher, and skill-level conflict constraints (much more efficient than pairwise). Pre-filters assignments that conflict with already-scheduled classes. Objective (in priority order): maximize classes scheduled (primary, `BIG_M`) → prefer `specialties`-matched teacher assignments (`PRIORITY_BONUS = 70`) → prefer earlier days Monday→Sunday → minimize distinct (teacher, day) working pairs (`TEACHER_DAY_WEIGHT = 1`). `BIG_M` is computed to dominate all lower-priority terms combined, including the teacher-day upper bound. Solver time limit: `timeoutSeconds - 5` (5s buffer for enumeration overhead).
 - `backend/requirements.txt` — fastapi, uvicorn[standard], ortools, pydantic.
 
-**Timeouts:** Frontend fetch timeout = 120s. Solver time limit = 115s (5s buffer). If the fetch times out or the backend is unreachable, `handleAutoSchedule` catches the error and falls back to greedy.
+**Streaming SSE endpoint (`/api/optimize/stream`):** Runs the solver in a background thread. A `ProgressCallback` fires each time CP-SAT finds an improved solution, pushing `{ type: 'progress', message, scheduled, total, elapsed }` events onto a queue. The async generator reads from the queue and streams SSE lines to the frontend. Ends with a `{ type: 'result', data: { scheduled, unscheduled } }` event. The frontend `optimizerCPSAT.js` parses these events and calls the `onProgress` callback for each progress event.
+
+**Timeouts:** Solver time limit = `timeoutSeconds - 5` seconds (default `timeoutSeconds = 120` from the API, but the UI defaults to **180**). Frontend fetch timeout = `(timeoutSeconds + 300) * 1000` ms (generous buffer to cover the enumeration phase and streaming overhead).
 
 **Chrome Private Network Access:** When the React app at `localhost:5173` fetches `localhost:8000`, Chrome enforces a preflight check requiring `Access-Control-Allow-Private-Network: true`. This is handled by the HTTP middleware in `main.py` — do not remove it.
 
 ### Optimizer rules
 
-Hard constraints enforced by both the greedy optimizer (`src/utils/optimizer.js`) and CP-SAT solver (`backend/solver.py`), as well as the drag/drop handlers and ClassForm teacher dropdown in `SchedulePage.jsx` and `ClassForm.jsx`:
+Hard constraints enforced by the CP-SAT solver (`backend/solver.py`), drag/drop handlers, and ClassForm teacher dropdown in `SchedulePage.jsx` and `ClassForm.jsx`:
 
 1. **Teacher genre match** — teacher's `genre` array must include the class's genre. Teachers with no genres set are never eligible for any class that has a genre.
 2. **Teacher availability** — class must fall within the teacher's availability window (1-minute inset: class can start/end exactly at a boundary).
@@ -261,7 +266,7 @@ All time labels show every slot (every 30 min) in consistent `H:MMp` format (e.g
 
 ### Sidebar (`src/components/Sidebar.jsx`)
 
-Maroon background (`#500000`). White text throughout. Width: `--sidebar-width: 290px` (set in `App.css`). Displays the studio logo/name at the top, nav links in the middle, a portrait photo of Suzan Ponthier (`src/assets/Suzan.jpeg`, 75% width, centered) below the nav, then a spacer, then **Save Data / Load Data buttons**, then a footer showing "The Dance Collective McKinney" at the bottom.
+Maroon background (`#500000`). White text throughout. Width: `--sidebar-width: 290px` (set in `App.css`). Displays the studio logo/name at the top, nav links in the middle (Schedule, Classes, Teachers, Students, Rooms, Help), a portrait photo of Suzan Ponthier (`src/assets/Suzan.jpeg`, 75% width, centered) below the nav, then a spacer, then **Save Data / Load Data buttons**, then a footer showing "The Dance Collective McKinney" at the bottom.
 
 Nav item icons use `color: initial` inline to prevent the parent's `rgba(255,255,255,0.65)` from washing out emoji colors.
 
