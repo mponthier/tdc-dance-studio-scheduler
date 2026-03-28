@@ -246,7 +246,7 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
 
       const cell = ws.getCell(rowStart, col)
       const timeRange = cls.startTime ? `${fmtTime(cls.startTime)}–${fmtTime(addMins(cls.startTime, cls.durationMinutes))}` : null
-      const baseFont = { size: 10, color: { argb: fgArgb }, bold: true }
+      const baseFont = { size: 10, color: { argb: 'FF000000' }, bold: true }
       const lines = [
         { text: cls.name, font: baseFont },
         teacher ? { text: teacher.name, font: isPriority ? { ...baseFont, underline: true } : baseFont } : null,
@@ -295,7 +295,7 @@ export async function exportScheduleToExcel(classes, teachers, rooms, students, 
       const uSkillHex = colorMode === 'skillLevel' ? (SKILL_COLORS[cls.skillLevel] ?? '#888888') : null
       row.eachCell({ includeEmpty: true }, (cell) => {
         cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: uSkillHex ? lightenArgb(uSkillHex, 0.72) : lightenArgb(teacher?.color, 0.82) } }
-        cell.font  = { size: 11, color: { argb: uSkillHex ? toArgb(uSkillHex) : toArgb(teacher?.color) } }
+        cell.font  = { size: 11, color: { argb: 'FF000000' } }
         cell.alignment = { vertical: 'middle', horizontal: 'left' }
         cell.border = { bottom: { style: 'thin', color: { argb: 'FFDDDDDD' } } }
       })

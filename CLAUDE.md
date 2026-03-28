@@ -53,10 +53,11 @@ Then refresh the page.
 | `src/utils/conflicts.js` | `detectConflicts(candidate, allClasses)` — used in `ClassForm` for real-time warnings. `findAllConflictingIds(allClasses)` — O(n²) scan used for conflict badges on the Classes list and `ClassBlock` tinting. |
 | `src/utils/availability.js` | `isWithinAvailability(availability, dayOfWeek, startTime, durationMinutes)` — returns true if the class fits inside an availability window. Applies a **1-minute inset**: checks `classStart+1` through `classEnd-1`, so a class can start/end exactly at an availability boundary. `detectAvailabilityWarnings(candidate, teacher, room)` — called alongside `detectConflicts` in `ClassForm`. |
 | `src/utils/timeHelpers.js` | Grid positioning math: `timeToRow`, `durationToRowSpan`. Constants: `DAYS`, `GRID_START_HOUR` (15), `GRID_START_MIN` (30), `GRID_END_HOUR` (21), `GRID_END_MIN` (30), `SLOT_MINUTES` (15), `TOTAL_SLOTS` (24). |
-| `src/utils/optimizerCPSAT.js` | `optimizeWithCPSAT(classes, teachers, rooms, onProgress, timeoutSeconds)` — calls the CP-SAT backend and merges results. When `onProgress` is provided, uses the streaming SSE endpoint (`/api/optimize/stream`) and fires `{ message, scheduled, total, elapsed }` on each improved solution; otherwise calls `POST /api/optimize` (non-streaming). Fetch timeout = `(timeoutSeconds + 300) * 1000` ms (5-min buffer on top of solver time). Also exports `isCPSATAvailable()` — hits `/api/health` with a 2s timeout. |
-| `src/utils/exportSchedule.js` | `exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms)` — ExcelJS-based export that mirrors the room-subdivided weekly grid. |
+| `src/utils/optimizerCPSAT.js` | `optimizeWithCPSAT(classes, teachers, rooms, onProgress, timeoutSeconds, externalSignal)` — calls the CP-SAT backend and merges results. When `onProgress` is provided, uses the streaming SSE endpoint (`/api/optimize/stream`) and fires `{ message, scheduled, total, elapsed }` on each improved solution; otherwise calls `POST /api/optimize` (non-streaming). The optional `externalSignal` (an `AbortSignal`) is merged with the internal timeout signal via a `makeSignal()` helper so either source can cancel the fetch. Fetch timeout = `(timeoutSeconds + 300) * 1000` ms (5-min buffer on top of solver time); when `timeoutSeconds === 0` ("Until Optimal"), fetch timeout is 12 hours. Also exports `isCPSATAvailable()` — hits `/api/health` with a 2s timeout. |
+| `src/utils/exportSchedule.js` | `exportScheduleToExcel(classes, teachers, rooms, students, visibleDays, visibleRooms, colorMode)` — ExcelJS-based export that mirrors the room-subdivided weekly grid. `colorMode` (`'teacher'` \| `'skillLevel'`) controls block fill colors, matching the Schedule page toggle. |
 | `src/utils/exportPDF.js` | `exportScheduleToPDF(gridElement)` — html2canvas + jsPDF export. Captures the inner `.weekly-grid` element (not the overflow wrapper) to avoid clipping. Uses a custom page size wide enough to fit the full grid aspect ratio. |
 | `src/pages/DocsPage/DocsPage.jsx` | Help page. Renders `README.md` and `USER-GUIDE.md` as tabbed markdown (using the `marked` library). README tab is shown first by default. Imports the markdown files as raw strings via Vite's `?raw` import. |
+| `src/pages/SchedulePage/AnalyticsPanel.jsx` | Modal shown after Auto Schedule completes. Displays summary stat cards, Teacher Workload, Room Utilization, Day Distribution, Genre Breakdown, and Skill Level Breakdown tables. Receives `analytics` object (computed in `App.jsx handleAutoSchedule`) and `onClose` prop. |
 
 ### Data schema (localStorage)
 
@@ -72,6 +73,9 @@ Then refresh the page.
 
 // dss_classes
 { id, name, style, skillLevel: string, teacherId, roomId, dayOfWeek, startTime: "HH:MM", durationMinutes: number, enrolledStudentIds: [] }
+
+// dss_schedule_progress
+{ messages: string[], scheduled: number|null, total: number|null, analytics: object|null }
 ```
 
 `availability` empty array = no restriction (always available).
@@ -85,7 +89,8 @@ Then refresh the page.
 - **Availability (teachers & rooms):** Mon–Fri, 3:30pm–9:30pm
 - **Classes:** 60 classes across all 10 genres, seeded with **no teacher, no day/time, no room** assigned. Each class has a `skillLevel` pre-assigned (`BI6` = Beg/Int (6-10), `BI10` = Beg/Int (10+), `IA6` = Int/Adv (6-10), `IA10` = Int/Adv (10+)). Skill levels are evenly distributed: **15 classes per level**. Duration distribution: 25 classes at 60 min; 13 at 45 min; 8 at 75 min; 7 at 90 min; 5 at 30 min; 1 at 105 min; 1 at 120 min. Mini/young classes → 30 min; beginners/mini-level → 45 min; mid-advanced → 75 min; teen/team/advanced → 90 min; advanced technique → 105 min; top-level advanced → 120 min. Teen-prefixed classes are `BI10`; Elite/Company variants for younger students are `BI6` or `IA6` as appropriate.
 - **Students:** one per skill level — Emma Johnson (Beg/Int 10+), Liam Park (Int/Adv 10+), Sofia Rivera (Int/Adv 10+), Noah Chen (Beg/Int 6-10), Olivia Williams (Int/Adv 10+), Ava Martinez (Int/Adv 6-10)
-- **Phone format:** `xxx-xxx-xxxx`
+- **Phone format:** `555-010-000X` (fake/demo — e.g. `555-010-0001`)
+- **Email format:** `firstname.lastname@tdc-demo.com` (fake/demo)
 
 ### Teacher genres & class genres
 
@@ -132,15 +137,15 @@ const TIME_ROW_OFFSET = 3   // CSS grid row where time slots begin (2 header row
 
 **Teacher, room & skill level filters:** Multi-select dropdown panels in the page header. Each filter is a button that opens a checkbox list. The button label shows "All …" when nothing is selected, the item name when exactly one is selected, or "N …" for multiple. A "Clear selection" link appears inside the dropdown when any items are chosen. Clicking outside closes any open dropdown. Room filter also controls which room sub-columns are rendered (`visibleRooms`). State: `filterTeacherIds`, `filterRoomIds`, and `filterSkillLevels` are `Set` objects. Skill level filter matches on `c.skillLevel || ''`.
 
-**Auto Schedule button:** Clicking opens a `ConfirmDialog` (confirm label "Schedule") with a dynamic message based on the current `solverTimeout` value. Async. Calls `optimizeWithCPSAT` with an `onProgress` callback that updates `scheduleProgress` state for real-time progress display. If the backend is unreachable or the fetch times out, an error message is shown. Shows a `cursor: wait` and "Scheduling…" button label while running. Result message format: `"Scheduled N classes. M assigned to a specialty teacher. Could not place: X, Y. (CP-SAT, 3.2s)"`. The "Could not place" and specialty sentences are omitted when not applicable.
+**Auto Schedule button:** Clicking opens a `ConfirmDialog` (confirm label "Schedule") with a dynamic message based on the current `solverTimeout` value. Async. Calls `optimizeWithCPSAT` with an `onProgress` callback that updates `scheduleProgress` state for real-time progress display. If the backend is unreachable or the fetch times out, an error message is shown. Shows a `cursor: wait` and "Scheduling…" button label while running. While the solver is running, an **Abort** button appears next to the "Scheduling…" button; clicking it calls `onAbort` prop → `handleAbort` in `App.jsx` → `abortControllerRef.current.abort()`. The catch block distinguishes `AbortError` from other errors and shows "Scheduling aborted." in the progress messages. `App.jsx` creates a fresh `AbortController` per run stored in `abortControllerRef`. Export to Excel and Export to PDF buttons are also disabled while `optimizing === true`. Result message format: `"Scheduled N classes. M assigned to a specialty teacher. Could not place: X, Y. (CP-SAT, 3.2s)"`. The "Could not place" and specialty sentences are omitted when not applicable.
 
-**Solver Timeout control:** A `<select>` dropdown in the toolbar (label "Timeout") lets the user choose the solver time limit. Default is **180 seconds**. `solverTimeout` state in `SchedulePage` is passed to `onAutoSchedule(solverTimeout)`. Fetch timeout is `(timeoutSeconds + 300) * 1000` ms.
+**Solver Timeout control:** A `<select>` dropdown in the toolbar (label "Timeout") lets the user choose the solver time limit. Default is **180 seconds**. A special **"Until Optimal"** option (value `0`) appears first in the list — when selected, the backend skips setting `max_time_in_seconds` entirely so CP-SAT runs until it proves optimality (gap = 0%). Fetch timeout for "Until Optimal" is 12 hours; the Abort button is the practical way to stop early. The confirmation dialog shows a tailored message for this option. `solverTimeout` state in `SchedulePage` is passed to `onAutoSchedule(solverTimeout)`. Fetch timeout for timed options is `(timeoutSeconds + 300) * 1000` ms.
 
-**Streaming progress:** `App.jsx` maintains `scheduleProgress` state (`{ messages: [], scheduled: null, total: null }`). The `onProgress` callback from `optimizeWithCPSAT` pushes updates into this state; `SchedulePage` renders progress messages while the solver runs.
+**Streaming progress & analytics:** `App.jsx` maintains `scheduleProgress` state (`{ messages: [], scheduled: null, total: null, analytics: null }`). The `onProgress` callback from `optimizeWithCPSAT` pushes progress updates into this state; `SchedulePage` renders progress messages while the solver runs. After the solver finishes, `handleAutoSchedule` computes an `analytics` object and stores it in `scheduleProgress.analytics`. `analytics.solverInfo` contains solver quality fields returned by the backend: `{ solverStatus, isOptimal, objectiveValue, bestBound, optimalityGapPct, wallTime }` (see CP-SAT backend section). When analytics are present, a **View Analytics** button appears in the `.optimize-messages-footer`; clicking it opens `AnalyticsPanel` (a `Modal` with `size="xl"`, max-width 980px). The analytics modal layout: Row 1 = four summary stat cards (Classes Scheduled, Not Placed, Specialty Matches, Solve Time). Row 2 = **Solver Quality** horizontal strip showing: Status badge (green = Optimal, amber = Feasible), Optimality Gap progress bar (green = 0%, yellow < 5%, orange < 20%, red ≥ 20%) with "Provably optimal" note at 0%, Objective Value, Best Bound. Row 3 = three-column grid: Teacher Workload | Room Utilization + Day Distribution | Genre Breakdown + Skill Level Breakdown. The Clear button in the footer resets `scheduleProgress` (including `analytics: null`) and closes the modal. `AnalyticsPanel.jsx` and `AnalyticsPanel.css` are co-located in `src/pages/SchedulePage/`. `scheduleProgress` is **persisted to `localStorage`** under the key `dss_schedule_progress`: it is initialized from `localStorage.getItem('dss_schedule_progress')` on first render and synced back on every update via `useEffect`. This means progress messages, result summaries, and analytics survive page reloads, browser tab switches, and the app sitting idle. The state is cleared when the user clicks Clear or starts a new Auto Schedule.
 
 **Clear Schedule button:** Opens a `ConfirmDialog` (title "Confirm Clear", confirm label "Clear") before resetting all classes to `dayOfWeek: '', startTime: '', roomId: '', teacherId: ''`.
 
-**Export to PDF / Export to Excel / Clear Schedule / Auto Schedule buttons:** All styled as `btn btn-primary` (maroon). Export buttons are disabled when no classes are scheduled.
+**Export to PDF / Export to Excel / Clear Schedule / Auto Schedule buttons:** All styled as `btn btn-primary` (maroon). Export to Excel and Export to PDF buttons are disabled when `classes.length === 0` (no classes exist at all) **or** when `optimizing === true` (Auto Schedule is running). Clear Schedule button is disabled when no classes are scheduled (`scheduledClasses.length === 0`).
 
 **Drag & drop rescheduling:** Class blocks are `draggable`. Grid slot divs are drop targets — each carries `day`, `roomId`, and `slotIndex`. Behavior differs by source:
 - **Unscheduled class dropped onto grid:** `findEligibleTeachers()` returns all genre-matching, availability-passing, conflict-free teachers. If none exist the drop is blocked. Otherwise a teacher-picker modal appears so the user selects which teacher to assign.
@@ -155,13 +160,13 @@ Drop validation enforces three additional constraints via helpers in `SchedulePa
 
 `slotIndexToTime(slotIndex)` converts grid row back to `"HH:MM"`.
 
-**Unscheduled panel:** Shown below the grid when any classes lack a day/time. Draggable chips can be dropped onto the grid to schedule them into a specific day + room slot.
+**Unscheduled panel:** Shown below the grid when any classes lack a day/time. Chips are sorted alphabetically by class name. Draggable chips can be dropped onto the grid to schedule them into a specific day + room slot. Chips are colored by skill level using the same `SKILL_COLORS` map as `ClassBlock` (background = full color + `22` alpha hex, left border = full color). Falls back to teacher color if no skill level is set. The `SKILL_COLORS` constant is defined locally in `SchedulePage.jsx` (matching `ClassBlock.jsx` and `exportSchedule.js`) — keep all three in sync. The sorted `unscheduledClasses` array is also passed to `exportScheduleToExcel` (Sheet 2) and `exportScheduleToPDF` (page 2), so export order matches the panel.
 
 **Right-click context menu:** Right-clicking a class block shows a context menu with "Unschedule class". Selecting it opens a `ConfirmDialog`; confirming resets that class to `dayOfWeek: '', startTime: '', roomId: '', teacherId: ''`.
 
 **Class detail panel:** Left-clicking a class block opens `ClassDetailPanel` — a read-only overlay (`.detail-overlay`) showing the class name, genre, day, time range, duration, teacher, room, and enrolled students list. Clicking outside the panel or the × button closes it.
 
-`ClassBlock` displays class name, teacher name, skill level, and time range (start–end, shown when `cls.startTime` is set). Room is omitted — it's already shown as the column header. The teacher name is rendered **bold and underlined** when the assigned teacher has the class genre in their `specialties` (Specialty for Scheduling). Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip includes the same fields plus the time range. Block coloring is controlled by `colorMode` (see Color mode toggle above).
+`ClassBlock` displays class name, teacher name, skill level, and time range (start–end, shown when `cls.startTime` is set). Room is omitted — it's already shown as the column header. The teacher name is rendered **bold and underlined** when the assigned teacher has the class genre in their `specialties` (Specialty for Scheduling). Text is always black (`#000000`) regardless of color mode or background color. Text wraps (`word-break: break-word`) rather than truncating. The hover tooltip includes the same fields plus the time range. Block background and border coloring is controlled by `colorMode` (see Color mode toggle above).
 
 ### Export to Excel (`src/utils/exportSchedule.js`)
 
@@ -171,7 +176,7 @@ Uses ExcelJS. Mirrors the room-subdivided weekly grid exactly, with per-day room
 - **Row 2:** Room sub-headers (only rooms available on that day). Even days `#F9F0F0`, odd days `#EDE8E8`.
 - **Rows 3+:** 24 time slot rows at 24pt height. All available slots white (`#FFFFFF`). Unavailable slots (outside room availability): solid medium grey `#B0B0B0` fill with white italic "N/A" text centered. Time label in column 1 every 30 minutes in `H:MM AM/PM` format. The cell immediately before each hour boundary has a dashed black `bottom` border (not a `top` on the hour cell — see Hour delineation note above). Day-start columns have a solid medium left border. Thick medium black outer border on all four edges of the full grid.
 - **Class blocks:** Merged cells spanning slot rows. Color follows the `colorMode` parameter: in `'teacher'` mode, teacher color lightened 78% for fill and full color for font/border; in `'skillLevel'` mode, the matching `SKILL_COLORS` hex lightened 72% for fill and full color for font/border (matching `ClassBlock` exactly). Displays class name, teacher name, skill level, and time range. Uses ExcelJS **rich text** (`cell.value = { richText: [...] }`) so each line can carry its own font; the teacher name segment gets `underline: true` when the teacher has the class genre in their `specialties`. `try/catch` around `mergeCells` handles overlapping classes gracefully. **Any future visual change to `ClassBlock` must be mirrored here.**
-- **Sheet 2:** Unscheduled classes as a styled flat list.
+- **Sheet 2:** Unscheduled classes as a styled flat list. The call site in `SchedulePage.jsx` always passes all unscheduled classes separately (appended after `visibleClasses`) so Sheet 2 is never filtered empty by the active teacher/room/skill-level filters.
 - Uses `dayColStart` map and `getCol(day, ri)` for per-day column offsets (days can have different room counts).
 - Local constants: `GRID_START_HOUR = 15`, `GRID_START_MIN = 30`, `SLOT_MINUTES = 15`, `TOTAL_SLOTS = 24`. `timeToSlot` accounts for the `:30` start offset.
 - Accepts `visibleDays`, `visibleRooms`, and `colorMode` so filters and the color toggle applied in the UI are respected. `colorMode` defaults to `'teacher'` if omitted. `SKILL_COLORS` in `exportSchedule.js` must stay in sync with `SKILL_COLORS` in `ClassBlock.jsx`.
@@ -181,10 +186,12 @@ Uses ExcelJS. Mirrors the room-subdivided weekly grid exactly, with per-day room
 
 Uses html2canvas + jsPDF.
 
+- Signature: `exportScheduleToPDF(gridElement, unscheduledClasses = [], teachers = [], colorMode = 'teacher')`.
 - Captures the inner `.weekly-grid` element (not the `.grid-wrapper` overflow container) using `target.scrollWidth`/`scrollHeight` so the full grid is captured without clipping.
 - Page size: at minimum A4 landscape (297×210mm); expands width proportionally if the grid aspect ratio requires it.
 - Title ("The Dance Collective McKinney — Weekly Schedule") and generation date printed above the grid image.
 - Grid image scaled with `Math.min(scaleByW, scaleByH)` to fit within available area.
+- If `unscheduledClasses` is non-empty, a **second page** is appended with the title "The Dance Collective McKinney — Unscheduled Classes" and a subtitle showing the count. The page contains a styled table with columns: Class, Genre, Skill Level, Duration, Teacher. Rows are colored by skill level or teacher color (matching the `colorMode` parameter), lightened 82%.
 - Unavailable slots render as solid `#B0B0B0` medium grey (CSS background-color), which html2canvas captures reliably. Do not use CSS gradients or patterns for unavailability — html2canvas does not render `repeating-linear-gradient` consistently.
 
 ### CP-SAT scheduling backend (`backend/`)
@@ -202,12 +209,12 @@ uvicorn main:app --port 8000
 
 **Files:**
 - `backend/main.py` — FastAPI app. CORS allows `localhost:5173` and `localhost:5174`. Custom HTTP middleware adds `Access-Control-Allow-Private-Network: true` to all responses (required by Chrome for cross-port localhost requests). Endpoints: `POST /api/optimize`, `POST /api/optimize/stream` (SSE), `GET /api/health`.
-- `backend/solver.py` — CP-SAT model. Enumerates all feasible (class, day, start, room, teacher) assignments filtered by availability (1-minute inset) and genre eligibility. Uses **optional interval variables + `AddNoOverlap`** for room, teacher, and skill-level conflict constraints (much more efficient than pairwise). Pre-filters assignments that conflict with already-scheduled classes. Objective (in priority order): maximize classes scheduled (primary, `BIG_M`) → prefer `specialties`-matched teacher assignments (`PRIORITY_BONUS = 70`) → prefer earlier days Monday→Sunday → minimize distinct (teacher, day) working pairs (`TEACHER_DAY_WEIGHT = 1`). `BIG_M` is computed to dominate all lower-priority terms combined, including the teacher-day upper bound. Solver time limit: `timeoutSeconds - 5` (5s buffer for enumeration overhead).
+- `backend/solver.py` — CP-SAT model. Enumerates all feasible (class, day, start, room, teacher) assignments filtered by availability (1-minute inset) and genre eligibility. Uses **optional interval variables + `AddNoOverlap`** for room, teacher, and skill-level conflict constraints (much more efficient than pairwise). Pre-filters assignments that conflict with already-scheduled classes. Objective (in priority order): maximize classes scheduled (primary, `BIG_M`) → prefer `specialties`-matched teacher assignments (`PRIORITY_BONUS = 70`) → prefer earlier days Monday→Sunday → minimize distinct (teacher, day) working pairs (`TEACHER_DAY_WEIGHT = 1`). `BIG_M` is computed to dominate all lower-priority terms combined, including the teacher-day upper bound. Solver time limit: `timeoutSeconds - 5` (5s buffer for enumeration overhead); when `timeoutSeconds === 0` ("Until Optimal"), `max_time_in_seconds` is not set at all and CP-SAT runs until it proves the optimal gap is 0%. The result dict includes solver quality fields: `solverStatus` (string: "Optimal" / "Feasible (time limit reached)" / "No solution"), `isOptimal` (bool), `objectiveValue` (int), `bestBound` (int), `optimalityGapPct` (float 0–100), `wallTime` (float seconds). These flow through `optimizerCPSAT.js` → `App.jsx` → `scheduleProgress.analytics.solverInfo`.
 - `backend/requirements.txt` — fastapi, uvicorn[standard], ortools, pydantic.
 
 **Streaming SSE endpoint (`/api/optimize/stream`):** Runs the solver in a background thread. A `ProgressCallback` fires each time CP-SAT finds an improved solution, pushing `{ type: 'progress', message, scheduled, total, elapsed }` events onto a queue. The async generator reads from the queue and streams SSE lines to the frontend. Ends with a `{ type: 'result', data: { scheduled, unscheduled } }` event. The frontend `optimizerCPSAT.js` parses these events and calls the `onProgress` callback for each progress event.
 
-**Timeouts:** Solver time limit = `timeoutSeconds - 5` seconds (default `timeoutSeconds = 120` from the API, but the UI defaults to **180**). Frontend fetch timeout = `(timeoutSeconds + 300) * 1000` ms (generous buffer to cover the enumeration phase and streaming overhead).
+**Timeouts:** Solver time limit = `timeoutSeconds - 5` seconds (default `timeoutSeconds = 120` from the API, but the UI defaults to **180**); when `timeoutSeconds === 0`, no time limit is set. Frontend fetch timeout = `(timeoutSeconds + 300) * 1000` ms (generous buffer to cover the enumeration phase and streaming overhead); for `timeoutSeconds === 0` the fetch timeout is 12 hours.
 
 **Chrome Private Network Access:** When the React app at `localhost:5173` fetches `localhost:8000`, Chrome enforces a preflight check requiring `Access-Control-Allow-Private-Network: true`. This is handled by the HTTP middleware in `main.py` — do not remove it.
 
@@ -242,7 +249,7 @@ Unscheduled classes display "Unscheduled" instead of a time string. Always guard
 
 ### Shared UI components
 
-- **`src/components/Modal.jsx`** — Generic modal wrapper with `title`, `onClose`, and optional `size` prop.
+- **`src/components/Modal.jsx`** — Generic modal wrapper with `title`, `onClose`, and optional `size` prop (`"lg"` = 660px default, `"xl"` = 980px). `modal-xl` class is defined in `Modal.css`.
 - **`src/components/ConfirmDialog.jsx`** — Confirmation prompt with `message`, `onConfirm`, `onCancel`, `title` (default `'Confirm Delete'`), and `confirmLabel` (default `'Delete'`). Used for destructive actions (deleting rooms, unscheduling classes, clearing the schedule). Pass custom `title` and `confirmLabel` to override the defaults.
 
 ### Class detail panel (`src/pages/SchedulePage/ClassDetailPanel.jsx`)
@@ -266,7 +273,7 @@ All time labels show every slot (every 30 min) in consistent `H:MMp` format (e.g
 
 ### Sidebar (`src/components/Sidebar.jsx`)
 
-Maroon background (`#500000`). White text throughout. Width: `--sidebar-width: 290px` (set in `App.css`). Displays the studio logo/name at the top, nav links in the middle (Schedule, Classes, Teachers, Students, Rooms, Help), a portrait photo of Suzan Ponthier (`src/assets/Suzan.jpeg`, 75% width, centered) below the nav, then a spacer, then **Save Data / Load Data buttons**, then a footer showing "The Dance Collective McKinney" at the bottom.
+Maroon background (`#500000`). White text throughout. Width: `--sidebar-width: 290px` (set in `App.css`). Displays the studio logo/name at the top, nav links in the middle (Schedule, Classes, Teachers, Students, Rooms, Help), the TDC logo image (`src/assets/TDC.jpg`, 75% width, centered) below the nav, then a spacer, then **Save Data / Load Data buttons**, then a footer showing "The Dance Collective McKinney" at the bottom.
 
 Nav item icons use `color: initial` inline to prevent the parent's `rgba(255,255,255,0.65)` from washing out emoji colors.
 

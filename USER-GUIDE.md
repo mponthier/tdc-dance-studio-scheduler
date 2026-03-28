@@ -39,7 +39,7 @@ The backend must be running before using the **Auto Schedule** button. You can c
 
 ## Navigation
 
-The sidebar on the left contains links to all five sections of the app:
+The sidebar on the left contains links to all six sections of the app:
 
 | Section | Purpose |
 |---|---|
@@ -48,8 +48,9 @@ The sidebar on the left contains links to all five sections of the app:
 | **Teachers** | Manage teacher profiles |
 | **Students** | Manage student records |
 | **Rooms** | Manage room configurations |
+| **Help** | User guide and README |
 
-The **Save Data** and **Load Data** buttons at the bottom of the sidebar export or import all four entity types at once as a single JSON file.
+The **Save Data** and **Load Data** buttons at the bottom of the sidebar are context-aware. On the Schedule or Help page they export/import all four entity types at once as a single JSON file. On an entity page (Classes, Teachers, Students, Rooms) they save or load only that page's data.
 
 ---
 
@@ -106,7 +107,8 @@ Room records include name, capacity, and availability windows. Editing availabil
 - Columns are grouped by day, then subdivided by room.
 - Rows represent 15-minute time slots from 3:30 PM to 9:30 PM.
 - Grey "N/A" cells indicate slots outside a room's availability.
-- Class blocks show the class name, teacher (bold & underlined if the teacher holds a specialty in that genre), skill level, and time range.
+- Class blocks show the class name, teacher (bold & underlined if the teacher holds a specialty in that genre), skill level, and time range. Text is always black.
+- Unscheduled class chips below the grid are sorted alphabetically by class name and color-coded by skill level: orange (Beg/Int 6-10), blue (Beg/Int 10+), green (Int/Adv 6-10), purple (Int/Adv 10+). Falls back to the teacher's color if no skill level is assigned.
 
 ### Scheduling a Class
 
@@ -124,7 +126,21 @@ Left-clicking opens a read-only **Class Detail Panel** showing genre, time range
 
 ### Auto Schedule
 
-Click **Auto Schedule** to run the CP-SAT optimizer. A confirmation dialog appears before the solver starts. The process may take up to 2 minutes. When complete, a result message shows how many classes were scheduled, how many were assigned to a specialty teacher, and the elapsed time.
+Click **Auto Schedule** to run the CP-SAT optimizer. A confirmation dialog appears before the solver starts. The **Timeout** dropdown in the toolbar controls the solver time limit (default 3 minutes). It also includes an **"Until Optimal"** option — selecting it tells the solver to keep running until it can prove no better schedule is possible (optimality gap = 0%). This may take a long time; use the **Abort** button to stop early. Progress messages appear in real time as the solver finds improved solutions. These messages and the final analytics **persist across page navigation, browser tab switches, and page reloads** — they remain visible until you click Clear or start a new Auto Schedule.
+
+While the solver is running, an **Abort** button appears next to the "Scheduling…" label. Clicking it immediately cancels the solver and shows "Scheduling aborted." in the progress area.
+
+When complete, a result message shows how many classes were scheduled, how many were assigned to a specialty teacher, and the elapsed time. A **View Analytics** button also appears — clicking it opens a modal with:
+
+- **Stat cards** — Classes Scheduled, Not Placed, Specialty Matches, Solve Time
+- **Solver Quality** — Status badge (Optimal or Feasible), Optimality Gap progress bar (0% = provably optimal — no better schedule exists), Objective Value, Best Bound
+- **Teacher Workload** — classes, hours, and days taught per teacher
+- **Room Utilization** — classes and hours per room
+- **Day Distribution** — classes and hours per day of the week
+- **Genre Breakdown** — class count per genre
+- **Skill Level Breakdown** — class count per skill level
+
+Click **Clear** in the results area to dismiss the messages and close the analytics modal.
 
 The solver respects the following rules:
 
@@ -162,10 +178,10 @@ Click **Clear Schedule** to unschedule all classes. This does not delete any cla
 
 ### Exporting
 
-- **Export to Excel** — downloads a `.xlsx` file mirroring the grid, including room columns, time slots, and class blocks with teacher colors.
-- **Export to PDF** — captures the full grid as a PDF.
+- **Export to Excel** — downloads a `.xlsx` file mirroring the grid, including room columns, time slots, and class blocks colored according to the current Teacher / Skill Level color mode. Unscheduled classes are always included on a separate Sheet 2 regardless of any active filters.
+- **Export to PDF** — captures the full grid as a PDF. If any unscheduled classes exist, a second page is added listing them in a table (Class, Genre, Skill Level, Duration, Teacher), colored to match the current color mode.
 
-Both export buttons are disabled when no classes are scheduled.
+Both export buttons are disabled when no classes exist at all, and also while Auto Schedule is running.
 
 ---
 

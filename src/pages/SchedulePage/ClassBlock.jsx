@@ -69,7 +69,7 @@ export default function ClassBlock({ cls, teacher, room, hasConflict, colorMode 
       style={{
         ...gridStyle,
         background: colors.bg,
-        color: colors.text || colors.border,
+        color: '#000000',
         borderLeft: hasConflict ? `3px solid var(--color-danger)` : `3px solid ${colors.border}`,
         pointerEvents: 'auto',
         cursor: 'grab',

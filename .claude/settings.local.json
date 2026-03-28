@@ -9,7 +9,9 @@
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\mpont\\\\AppData\\\\Local\\\\Temp\\\\npm_install.ps1\")",
       "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\mpont\\\\AppData\\\\Local\\\\Temp\\\\vite_build.ps1\")",
       "Bash(powershell.exe -Command \"Start-Process ''chrome'' -ArgumentList ''http://localhost:5173''\")",
-      "Bash(powershell.exe -ExecutionPolicy Bypass -Command \"Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Get-Process | Stop-Process -Force\")"
+      "Bash(powershell.exe -ExecutionPolicy Bypass -Command \"Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Get-Process | Stop-Process -Force\")",
+      "Bash(ls \"c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/\"*.md)",
+      "Bash(ls \"c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/public/\"*.md)"
     ]
   }
 }

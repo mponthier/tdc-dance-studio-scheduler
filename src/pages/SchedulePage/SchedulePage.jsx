@@ -8,6 +8,7 @@ import { exportScheduleToExcel } from '../../utils/exportSchedule'
 import { exportScheduleToPDF } from '../../utils/exportPDF'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import AnalyticsPanel from './AnalyticsPanel'
 import './SchedulePage.css'
 
 const SKILL_LEVELS = ['Beg/Int (6-10)', 'Beg/Int (10+)', 'Int/Adv (6-10)', 'Int/Adv (10+)']
@@ -173,8 +174,15 @@ function RoomColumn({ col, colClasses, teachers, rooms, conflictIds, slotHeight,
   )
 }
 
+const SKILL_COLORS = {
+  'Beg/Int (6-10)': '#e67e22',
+  'Beg/Int (10+)':  '#2980b9',
+  'Int/Adv (6-10)': '#27ae60',
+  'Int/Adv (10+)':  '#8e44ad',
+}
+
 function UnscheduledChip({ cls, teacher, onDragStart, onDragEnd }) {
-  const color = teacher?.color || '#888'
+  const color = SKILL_COLORS[cls.skillLevel] || teacher?.color || '#888'
   return (
     <div
       draggable
@@ -212,7 +220,7 @@ function TimeLabel({ slotIndex }) {
   )
 }
 
-export default function SchedulePage({ classes, teachers, rooms, students, classCrud, optimizing, stopwatchSecs, scheduleProgress, setScheduleProgress, onAutoSchedule }) {
+export default function SchedulePage({ classes, teachers, rooms, students, classCrud, optimizing, stopwatchSecs, scheduleProgress, setScheduleProgress, onAutoSchedule, onAbort }) {
   const gridRef = useRef(null)
   const [selected, setSelected]           = useState(null)
   const [solverTimeout, setSolverTimeout] = useState(180)
@@ -232,6 +240,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
   const [filterSkillLevels, setFilterSkillLevels] = useState(new Set())
   const [skillDropOpen, setSkillDropOpen] = useState(false) // { cls, day, roomId, slotIndex, eligibleTeachers }
   const [zoom, setZoom]                   = useState(1.0)
+  const [showAnalytics, setShowAnalytics] = useState(false)
 
   useEffect(() => {
     if (!contextMenu) return
@@ -360,7 +369,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
     setDragOverSlot(null)
   }
 
-  const unscheduledClasses = classes.filter((c) => !c.dayOfWeek || !c.startTime)
+  const unscheduledClasses = classes.filter((c) => !c.dayOfWeek || !c.startTime).sort((a, b) => a.name.localeCompare(b.name))
   const scheduledClasses   = classes.filter((c) => c.dayOfWeek && c.startTime)
   const visibleClasses     = scheduledClasses
     .filter((c) => filterTeacherIds.size  === 0 || filterTeacherIds.has(c.teacherId))
@@ -503,12 +512,12 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
             </div>
             <button
               className="btn btn-primary"
-              onClick={() => exportScheduleToExcel(visibleClasses.filter((c) => !hiddenDays.has(c.dayOfWeek)), teachers, rooms, students, visibleDays, visibleRooms, colorMode)}
-              disabled={scheduledClasses.length === 0}
+              onClick={() => exportScheduleToExcel([...visibleClasses.filter((c) => !hiddenDays.has(c.dayOfWeek)), ...unscheduledClasses], teachers, rooms, students, visibleDays, visibleRooms, colorMode)}
+              disabled={classes.length === 0 || optimizing}
             >
               Export to Excel
             </button>
-            <button className="btn btn-primary" onClick={() => exportScheduleToPDF(gridRef.current)} disabled={scheduledClasses.length === 0}>
+            <button className="btn btn-primary" onClick={() => exportScheduleToPDF(gridRef.current, unscheduledClasses, teachers, colorMode)} disabled={classes.length === 0 || optimizing}>
               Export to PDF
             </button>
             <button className="btn btn-primary" onClick={() => setConfirmClear(true)} disabled={scheduledClasses.length === 0}>
@@ -525,6 +534,7 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                 {[60,120,180,240,300,360,420,480,540,600].map((s) => (
                   <option key={s} value={s}>{s / 60}m</option>
                 ))}
+                <option value={0}>Until Optimal</option>
               </select>
             </label>
             <button className="btn btn-primary" onClick={() => setConfirmAutoSchedule(true)} disabled={optimizing || classes.length === 0}>
@@ -534,6 +544,11 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
                   : 'Scheduling…'
                 : 'Auto Schedule'}
             </button>
+            {optimizing && (
+              <button className="btn btn-danger" onClick={onAbort}>
+                Abort
+              </button>
+            )}
             {stopwatchSecs > 0 && (
               <span style={{ fontSize: 13, color: 'var(--color-text-muted)', minWidth: 36 }}>
                 {fmtStopwatch(stopwatchSecs)}
@@ -714,8 +729,13 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
           ))}
           {!optimizing && (
             <div className="optimize-messages-footer">
+              {scheduleProgress.analytics && (
+                <button className="btn btn-primary btn-sm" onClick={() => setShowAnalytics(true)}>
+                  View Analytics
+                </button>
+              )}
               <button className="btn btn-ghost btn-sm"
-                onClick={() => setScheduleProgress({ messages: [], scheduled: null, total: null })}>
+                onClick={() => { setScheduleProgress({ messages: [], scheduled: null, total: null, analytics: null }); setShowAnalytics(false) }}>
                 Clear
               </button>
             </div>
@@ -741,7 +761,9 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
       {confirmAutoSchedule && (
         <ConfirmDialog
           title="Auto Schedule"
-          message={`Auto scheduling may take up to ${solverTimeout < 120 ? `${solverTimeout}s` : solverTimeout % 60 === 0 ? `${solverTimeout / 60} minute${solverTimeout / 60 !== 1 ? 's' : ''}` : `${Math.floor(solverTimeout / 60)}m ${solverTimeout % 60}s`} to complete. Proceed?`}
+          message={solverTimeout === 0
+            ? 'The solver will run until it finds a provably optimal schedule. This may take a long time — use Abort to stop early. Proceed?'
+            : `Auto scheduling may take up to ${solverTimeout < 120 ? `${solverTimeout}s` : solverTimeout % 60 === 0 ? `${solverTimeout / 60} minute${solverTimeout / 60 !== 1 ? 's' : ''}` : `${Math.floor(solverTimeout / 60)}m ${solverTimeout % 60}s`} to complete. Proceed?`}
           confirmLabel="Schedule"
           onConfirm={() => { setConfirmAutoSchedule(false); onAutoSchedule(solverTimeout) }}
           onCancel={() => setConfirmAutoSchedule(false)}
@@ -803,6 +825,13 @@ export default function SchedulePage({ classes, teachers, rooms, students, class
           room={rooms.find((r) => r.id === selected.roomId)}
           students={students}
           onClose={() => setSelected(null)}
+        />
+      )}
+
+      {showAnalytics && scheduleProgress.analytics && (
+        <AnalyticsPanel
+          analytics={scheduleProgress.analytics}
+          onClose={() => setShowAnalytics(false)}
         />
       )}
     </div>

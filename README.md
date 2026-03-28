@@ -18,12 +18,13 @@ The app is a React single-page application backed by an optional Python/FastAPI 
 
 ### Key Features
 
-- **Auto Schedule** — CP-SAT optimizer assigns teachers, rooms, and time slots to all unscheduled classes while respecting availability, genre eligibility, and conflict constraints.
+- **Auto Schedule** — CP-SAT optimizer assigns teachers, rooms, and time slots to all unscheduled classes while respecting availability, genre eligibility, and conflict constraints. An **Abort** button appears while the solver is running to cancel early. The **Timeout** dropdown includes an **"Until Optimal"** option that runs the solver until it proves no better schedule exists.
+- **Schedule Analytics** — After Auto Schedule completes, a View Analytics button opens a modal showing stat cards (Classes Scheduled, Not Placed, Specialty Matches, Solve Time), a **Solver Quality** strip (Status, Optimality Gap, Objective Value, Best Bound), Teacher Workload, Room Utilization, Day Distribution, Genre Breakdown, and Skill Level Breakdown tables.
 - **Drag & Drop** — Classes can be dragged from the unscheduled panel or rescheduled directly on the grid.
 - **Conflict detection** — Real-time warnings for teacher/room/skill-level overlaps.
-- **Export** — Weekly schedule exports to Excel (room-subdivided grid) or PDF (html2canvas capture).
+- **Export** — Weekly schedule exports to Excel (room-subdivided grid, respects Teacher/Skill Level color mode; unscheduled classes always appear on Sheet 2) or PDF (html2canvas capture; a second page lists unscheduled classes when any exist).
 - **Per-entity Save/Load/Clear** — Each data page can independently export, import, or clear its records as `.json` files.
-- **Full data Save/Load** — Sidebar buttons export or import all four entities at once.
+- **Full data Save/Load** — Sidebar buttons export or import all four entities at once when on the Schedule or Help page.
 
 ---
 
@@ -78,7 +79,7 @@ The frontend at `localhost:5173` communicates with the backend at `localhost:800
 
 ### Hard Constraints
 
-Enforced by the CP-SAT solver, the greedy optimizer fallback, drag & drop handlers, and the ClassForm teacher dropdown:
+Enforced by the CP-SAT solver, drag & drop handlers, and the ClassForm teacher dropdown:
 
 1. **Teacher genre match** — the teacher's `genre` array must include the class's genre. Teachers with no genres set are never eligible for any class that has a genre.
 2. **Teacher availability** — the class must fall within the teacher's availability window (1-minute inset: a class may start or end exactly at a boundary).

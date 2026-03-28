@@ -287,7 +287,8 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
     # Solve
     # ------------------------------------------------------------------ #
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = float(timeout_seconds)
+    if timeout_seconds > 0:
+        solver.parameters.max_time_in_seconds = float(timeout_seconds)
 
     _emit(progress_queue,
           f"Model built ({len(assign_vars):,} variables, {len(assignments):,} assignments). Solver running…",
@@ -299,13 +300,17 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
     else:
         status = solver.solve(model)
 
-    status_label = {cp_model.OPTIMAL: "optimal", cp_model.FEASIBLE: "feasible (time limit reached)"}.get(status, "no solution")
+    status_label = {cp_model.OPTIMAL: "Optimal", cp_model.FEASIBLE: "Feasible (time limit reached)"}.get(status, "No solution")
     elapsed_total = round(solver.wall_time, 1)
     _emit(progress_queue, f"Solver finished: {status_label} — {elapsed_total}s", total=len(unscheduled))
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         _emit(progress_queue, "No feasible schedule found.", scheduled=0, total=len(unscheduled))
-        return {"scheduled": [], "unscheduled": [c["id"] for c in unscheduled]}
+        return {
+            "scheduled": [], "unscheduled": [c["id"] for c in unscheduled],
+            "solverStatus": status_label, "isOptimal": False,
+            "objectiveValue": 0, "bestBound": 0, "optimalityGapPct": 0.0, "wallTime": elapsed_total,
+        }
 
     # ------------------------------------------------------------------ #
     # Collect results
@@ -328,4 +333,18 @@ def solve(data: dict, progress_queue=None, timeout_seconds: float = 120.0) -> di
             })
 
     unscheduled_ids = [c["id"] for c in unscheduled if c["id"] not in scheduled_ids]
-    return {"scheduled": scheduled_out, "unscheduled": unscheduled_ids}
+
+    obj   = solver.ObjectiveValue()
+    bound = solver.BestObjectiveBound()
+    gap   = round(abs(bound - obj) / max(1.0, abs(bound)) * 100, 1) if bound != 0 else 0.0
+
+    return {
+        "scheduled":        scheduled_out,
+        "unscheduled":      unscheduled_ids,
+        "solverStatus":     status_label,
+        "isOptimal":        status == cp_model.OPTIMAL,
+        "objectiveValue":   round(obj),
+        "bestBound":        round(bound),
+        "optimalityGapPct": gap,
+        "wallTime":         elapsed_total,
+    }

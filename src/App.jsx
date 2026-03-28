@@ -23,7 +23,18 @@ export default function App() {
 
   const [optimizing, setOptimizing] = useState(false)
   const [stopwatchSecs, setStopwatchSecs] = useState(0)
-  const [scheduleProgress, setScheduleProgress] = useState({ messages: [], scheduled: null, total: null })
+  const [scheduleProgress, setScheduleProgress] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dss_schedule_progress')
+      return saved ? JSON.parse(saved) : { messages: [], scheduled: null, total: null, analytics: null }
+    } catch {
+      return { messages: [], scheduled: null, total: null, analytics: null }
+    }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem('dss_schedule_progress', JSON.stringify(scheduleProgress)) } catch { /* quota */ }
+  }, [scheduleProgress])
 
   useEffect(() => {
     if (!optimizing) return
@@ -35,10 +46,16 @@ export default function App() {
   const dataRef = useRef(data)
   useEffect(() => { dataRef.current = data }, [data])
 
+  const abortControllerRef = useRef(null)
+  function handleAbort() {
+    abortControllerRef.current?.abort()
+  }
+
   async function handleAutoSchedule(solverTimeout) {
+    abortControllerRef.current = new AbortController()
     setOptimizing(true)
     setStopwatchSecs(0)
-    setScheduleProgress({ messages: [], scheduled: null, total: null })
+    setScheduleProgress({ messages: [], scheduled: null, total: null, analytics: null })
     const { classes, teachers, rooms, classCrud } = dataRef.current
     const t0 = Date.now()
     try {
@@ -48,9 +65,9 @@ export default function App() {
           scheduled: p.scheduled ?? prev.scheduled,
           total: p.total ?? prev.total,
         }))
-      }, solverTimeout)
+      }, solverTimeout, abortControllerRef.current.signal)
       const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
-      const { scheduled, unscheduledIds } = result
+      const { scheduled, unscheduledIds, solverInfo } = result
       if (scheduled.length > 0) dataRef.current.classCrud.updateMany(scheduled)
       const unscheduledNames = unscheduledIds
         .map((id) => dataRef.current.classes.find((c) => c.id === id)?.name)
@@ -65,10 +82,78 @@ export default function App() {
       if (scheduled.length > 0) summary += ` ${specialtyCount} assigned to a specialty teacher.`
       if (unscheduledNames.length > 0) summary += ` Could not place: ${unscheduledNames.join(', ')}.`
       summary += ` (CP-SAT, ${elapsed}s)`
-      setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, summary] }))
+
+      // ── Compute analytics ──────────────────────────────────────────────────
+      const teacherMap = Object.fromEntries(dataRef.current.teachers.map((t) => [t.id, t]))
+      const roomMap    = Object.fromEntries(dataRef.current.rooms.map((r) => [r.id, r]))
+      const DAY_ORDER  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+      const teacherStats = {}
+      scheduled.forEach((cls) => {
+        if (!cls.teacherId) return
+        if (!teacherStats[cls.teacherId]) {
+          const t = teacherMap[cls.teacherId]
+          teacherStats[cls.teacherId] = { id: cls.teacherId, name: t?.name ?? 'Unknown', color: t?.color ?? '#888', classCount: 0, totalMinutes: 0, days: new Set() }
+        }
+        teacherStats[cls.teacherId].classCount++
+        teacherStats[cls.teacherId].totalMinutes += cls.durationMinutes
+        teacherStats[cls.teacherId].days.add(cls.dayOfWeek)
+      })
+      const byTeacher = Object.values(teacherStats)
+        .map((t) => ({ ...t, days: [...t.days].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)) }))
+        .sort((a, b) => b.classCount - a.classCount)
+
+      const roomStats = {}
+      scheduled.forEach((cls) => {
+        if (!cls.roomId) return
+        if (!roomStats[cls.roomId]) {
+          const r = roomMap[cls.roomId]
+          roomStats[cls.roomId] = { id: cls.roomId, name: r?.name ?? 'Unknown', classCount: 0, totalMinutes: 0 }
+        }
+        roomStats[cls.roomId].classCount++
+        roomStats[cls.roomId].totalMinutes += cls.durationMinutes
+      })
+      const byRoom = Object.values(roomStats).sort((a, b) => b.classCount - a.classCount)
+
+      const dayStats = Object.fromEntries(DAY_ORDER.map((d) => [d, { day: d, classCount: 0, totalMinutes: 0 }]))
+      scheduled.forEach((cls) => {
+        if (cls.dayOfWeek && dayStats[cls.dayOfWeek]) {
+          dayStats[cls.dayOfWeek].classCount++
+          dayStats[cls.dayOfWeek].totalMinutes += cls.durationMinutes
+        }
+      })
+      const byDay = DAY_ORDER.map((d) => dayStats[d])
+
+      const genreStats = {}
+      scheduled.forEach((cls) => { const g = cls.style || 'Unknown'; genreStats[g] = (genreStats[g] || 0) + 1 })
+      const byGenre = Object.entries(genreStats)
+        .map(([genre, classCount]) => ({ genre, classCount }))
+        .sort((a, b) => b.classCount - a.classCount)
+
+      const SKILL_ORDER = ['Beg/Int (6-10)', 'Beg/Int (10+)', 'Int/Adv (6-10)', 'Int/Adv (10+)']
+      const skillStats = {}
+      scheduled.forEach((cls) => { if (cls.skillLevel) skillStats[cls.skillLevel] = (skillStats[cls.skillLevel] || 0) + 1 })
+      const bySkillLevel = SKILL_ORDER.filter((s) => skillStats[s]).map((s) => ({ skillLevel: s, classCount: skillStats[s] }))
+
+      const analytics = {
+        scheduledCount: scheduled.length,
+        unscheduledCount: unscheduledIds.length,
+        totalClasses: classes.length,
+        specialtyCount,
+        elapsedSecs: elapsed,
+        byTeacher, byRoom, byDay, byGenre, bySkillLevel,
+        solverInfo: solverInfo ?? null,
+      }
+
+      setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, summary], analytics }))
     } catch (err) {
-      setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, `Error: ${err.message}`] }))
+      if (err.name === 'AbortError') {
+        setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, 'Scheduling aborted.'] }))
+      } else {
+        setScheduleProgress((prev) => ({ ...prev, messages: [...prev.messages, `Error: ${err.message}`] }))
+      }
     } finally {
+      abortControllerRef.current = null
       setOptimizing(false)
     }
   }
@@ -140,6 +225,7 @@ export default function App() {
             scheduleProgress={scheduleProgress}
             setScheduleProgress={setScheduleProgress}
             onAutoSchedule={handleAutoSchedule}
+            onAbort={handleAbort}
           />
         )
       case 'classes':

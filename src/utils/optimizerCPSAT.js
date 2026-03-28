@@ -1,15 +1,20 @@
 const BACKEND_URL = 'http://localhost:8000'
 
-function mergeResults(classes, scheduled, unscheduled) {
+function mergeResults(classes, data) {
+  const { scheduled, unscheduled, solverStatus, isOptimal, objectiveValue, bestBound, optimalityGapPct, wallTime } = data
   const classById = Object.fromEntries(classes.map((c) => [c.id, c]))
-  const updatedClasses = scheduled.map((s) => ({
+  const updatedClasses = (scheduled || []).map((s) => ({
     ...classById[s.id],
     dayOfWeek: s.dayOfWeek,
     startTime: s.startTime,
     roomId: s.roomId,
     teacherId: s.teacherId,
   }))
-  return { scheduled: updatedClasses, unscheduledIds: unscheduled }
+  return {
+    scheduled: updatedClasses,
+    unscheduledIds: unscheduled || [],
+    solverInfo: { solverStatus, isOptimal, objectiveValue, bestBound, optimalityGapPct, wallTime },
+  }
 }
 
 /**
@@ -19,8 +24,20 @@ function mergeResults(classes, scheduled, unscheduled) {
  * Returns { scheduled: [...updatedClasses], unscheduledIds: [...ids] }
  * or throws if the backend is unreachable (caller should fall back to greedy).
  */
-export async function optimizeWithCPSAT(classes, teachers, rooms, onProgress, timeoutSeconds = 120) {
-  const fetchTimeout = (timeoutSeconds + 300) * 1000  // 5-min buffer covers enumeration phase + overhead
+function makeSignal(fetchTimeout, externalSignal) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), fetchTimeout)
+  const cleanup = () => clearTimeout(timer)
+  controller.signal.addEventListener('abort', cleanup, { once: true })
+  if (externalSignal) {
+    if (externalSignal.aborted) { controller.abort(externalSignal.reason); return controller.signal }
+    externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true })
+  }
+  return controller.signal
+}
+
+export async function optimizeWithCPSAT(classes, teachers, rooms, onProgress, timeoutSeconds = 120, externalSignal) {
+  const fetchTimeout = timeoutSeconds === 0 ? 12 * 60 * 60 * 1000 : (timeoutSeconds + 300) * 1000  // 12h cap for "until optimal"; else 5-min buffer
   const body = JSON.stringify({ classes, teachers, rooms, timeoutSeconds })
 
   if (!onProgress) {
@@ -28,11 +45,10 @@ export async function optimizeWithCPSAT(classes, teachers, rooms, onProgress, ti
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
-      signal: AbortSignal.timeout(fetchTimeout),
+      signal: makeSignal(fetchTimeout, externalSignal),
     })
     if (!response.ok) throw new Error(`CP-SAT backend error ${response.status}: ${await response.text()}`)
-    const { scheduled, unscheduled } = await response.json()
-    return mergeResults(classes, scheduled, unscheduled)
+    return mergeResults(classes, await response.json())
   }
 
   // Streaming SSE path
@@ -40,7 +56,7 @@ export async function optimizeWithCPSAT(classes, teachers, rooms, onProgress, ti
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,
-    signal: AbortSignal.timeout(fetchTimeout),
+    signal: makeSignal(fetchTimeout, externalSignal),
   })
   if (!response.ok) throw new Error(`CP-SAT backend error ${response.status}: ${await response.text()}`)
 
@@ -61,7 +77,7 @@ export async function optimizeWithCPSAT(classes, teachers, rooms, onProgress, ti
       if (event.type === 'progress') {
         onProgress({ message: event.message, scheduled: event.scheduled, total: event.total, elapsed: event.elapsed })
       } else if (event.type === 'result') {
-        finalResult = mergeResults(classes, event.data.scheduled, event.data.unscheduled)
+        finalResult = mergeResults(classes, event.data)
       } else if (event.type === 'error') {
         streamError = new Error(event.message)
       }

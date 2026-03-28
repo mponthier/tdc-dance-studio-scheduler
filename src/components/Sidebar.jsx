@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import './Sidebar.css'
-import suzanImg from '../assets/Suzan.jpeg'
+import tdcImg from '../assets/TDC.jpg'
 
 const NAV_ITEMS = [
   { id: 'schedule', label: 'Schedule', icon: '📅' },
@@ -36,7 +36,7 @@ export default function Sidebar({ activeView, onNavigate, onExport, onImport }) 
         ))}
       </nav>
       <div className="sidebar-portrait">
-        <img src={suzanImg} alt="Suzan Ponthier" className="sidebar-portrait-img" />
+        <img src={tdcImg} alt="The Dance Collective" className="sidebar-portrait-img" />
       </div>
       <div className="sidebar-spacer" />
       <div className="sidebar-data-actions">
