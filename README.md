@@ -18,7 +18,7 @@ The app is a React single-page application backed by an optional Python/FastAPI 
 
 ### Key Features
 
-- **Auto Schedule** — CP-SAT optimizer assigns teachers, rooms, and time slots to all unscheduled classes while respecting availability, genre eligibility, and conflict constraints. An **Abort** button appears while the solver is running to cancel early. The **Timeout** dropdown includes an **"Until Optimal"** option that runs the solver until it proves no better schedule exists.
+- **Auto Schedule** — CP-SAT optimizer assigns teachers, rooms, and time slots to all unscheduled classes while respecting availability, genre eligibility, and conflict constraints. A live HH:MM:SS stopwatch and an **Abort** button appear while the solver is running. The **Timeout** dropdown (1m–10m, default 3m) includes an **"Until Optimal"** option that runs the solver until it proves no better schedule exists (fetch timeout: 5 days).
 - **Schedule Analytics** — After Auto Schedule completes, a View Analytics button opens a modal showing stat cards (Classes Scheduled, Not Placed, Specialty Matches, Solve Time), a **Solver Quality** strip (Status, Optimality Gap, Objective Value, Best Bound), Teacher Workload, Room Utilization, Day Distribution, Genre Breakdown, and Skill Level Breakdown tables.
 - **Drag & Drop** — Classes can be dragged from the unscheduled panel or rescheduled directly on the grid.
 - **Conflict detection** — Real-time warnings for teacher/room/skill-level overlaps.
