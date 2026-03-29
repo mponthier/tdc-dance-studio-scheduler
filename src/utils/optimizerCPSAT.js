@@ -37,7 +37,7 @@ function makeSignal(fetchTimeout, externalSignal) {
 }
 
 export async function optimizeWithCPSAT(classes, teachers, rooms, onProgress, timeoutSeconds = 120, externalSignal) {
-  const fetchTimeout = timeoutSeconds === 0 ? 12 * 60 * 60 * 1000 : (timeoutSeconds + 300) * 1000  // 12h cap for "until optimal"; else 5-min buffer
+  const fetchTimeout = timeoutSeconds === 0 ? 5 * 24 * 60 * 60 * 1000 : (timeoutSeconds + 300) * 1000  // 5-day cap for "until optimal"; else 5-min buffer
   const body = JSON.stringify({ classes, teachers, rooms, timeoutSeconds })
 
   if (!onProgress) {

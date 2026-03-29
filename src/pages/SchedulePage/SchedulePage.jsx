@@ -82,7 +82,10 @@ function isTeacherFreeForSlot(teacherId, day, slotIndex, durationMinutes, exclud
 }
 
 function fmtStopwatch(secs) {
-  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 function isRoomFreeForSlot(roomId, day, slotIndex, durationMinutes, excludeClassId, allClasses) {

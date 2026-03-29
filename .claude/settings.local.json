@@ -11,7 +11,18 @@
       "Bash(powershell.exe -Command \"Start-Process ''chrome'' -ArgumentList ''http://localhost:5173''\")",
       "Bash(powershell.exe -ExecutionPolicy Bypass -Command \"Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Get-Process | Stop-Process -Force\")",
       "Bash(ls \"c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/\"*.md)",
-      "Bash(ls \"c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/public/\"*.md)"
+      "Bash(ls \"c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/public/\"*.md)",
+      "Bash(\"venv/Scripts/python.exe\" -m uvicorn main:app --port 8000)",
+      "Bash(\"C:/Program Files/nodejs/npm.cmd\" run dev)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -s http://localhost:5173 -o /dev/null -w \"%{http_code}\")",
+      "Bash(mv \"Scheduling - Complete.png\" \"Scheduling-Complete.png\")",
+      "Bash(mv \"Scheduling - Analytics.png\" \"Scheduling-Analytics.png\")",
+      "Bash(python3 -c \":*)",
+      "Bash(powershell -Command \":*)",
+      "Bash(powershell -Command \"[System.IO.File]::WriteAllText\\(''c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/USER-GUIDE.md'', \\([System.IO.File]::ReadAllText\\(''c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/USER-GUIDE.md'', [System.Text.Encoding]::UTF8\\) -replace ''a€\"\"'',''—'' -replace [char]0xFEFF,''''\\), [System.Text.UTF8Encoding]::new\\($false\\)\\); ''done''\")",
+      "Bash(powershell -Command \"[System.IO.File]::WriteAllText\\(''c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/USER-GUIDE.md'', [System.IO.File]::ReadAllText\\(''c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/USER-GUIDE.md'', [System.Text.Encoding]::UTF8\\).TrimStart\\([char]0xFEFF\\), [System.Text.UTF8Encoding]::new\\($false\\)\\); ''done''\")",
+      "Bash(powershell -Command \"[System.IO.File]::WriteAllText\\(''c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/USER-GUIDE.md'', [System.IO.File]::ReadAllText\\(''c:/Users/mpont/OneDrive/Desktop/Claude Code/tdc-dance-studio-scheduler/USER-GUIDE.md''\\).TrimStart\\([char]0xFEFF\\), [System.Text.UTF8Encoding]::new\\([bool]0\\)\\); ''done''\")"
     ]
   }
 }

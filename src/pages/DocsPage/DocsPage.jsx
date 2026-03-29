@@ -26,6 +26,9 @@ export default function DocsPage() {
             {t.label}
           </button>
         ))}
+        <button className="docs-print-btn" onClick={() => window.print()} title="Print">
+          🖨 Print
+        </button>
       </div>
       <div
         className="docs-body markdown-body"

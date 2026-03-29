@@ -64,6 +64,11 @@ body {
   margin-left: var(--sidebar-width);
   padding: 32px 36px;
   min-width: 0;
+  transition: margin-left 0.22s ease;
+}
+
+.sidebar-collapsed .app-main {
+  margin-left: 0;
 }
 
 /* ── Page header ── */

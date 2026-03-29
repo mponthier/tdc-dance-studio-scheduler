@@ -25,6 +25,8 @@ The app is a React single-page application backed by an optional Python/FastAPI 
 - **Export** — Weekly schedule exports to Excel (room-subdivided grid, respects Teacher/Skill Level color mode; unscheduled classes always appear on Sheet 2) or PDF (html2canvas capture; a second page lists unscheduled classes when any exist).
 - **Per-entity Save/Load/Clear** — Each data page can independently export, import, or clear its records as `.json` files.
 - **Full data Save/Load** — Sidebar buttons export or import all four entities at once when on the Schedule or Help page.
+- **Collapsible sidebar** — The sidebar can be hidden with the **‹** button and restored with the **›** tab that appears at the left edge.
+- **Print User Guide** — A Print button on the Help page prints the active document (README or User Guide) with the sidebar and navigation hidden.
 
 ---
 

@@ -13,15 +13,18 @@ const NAV_ITEMS = [
 
 const ENTITY_LABEL = { classes: 'Classes', students: 'Students', teachers: 'Teachers', rooms: 'Rooms' }
 
-export default function Sidebar({ activeView, onNavigate, onExport, onImport }) {
+export default function Sidebar({ activeView, onNavigate, onExport, onImport, open, onToggle }) {
   const fileInputRef = useRef(null)
   const entityLabel = ENTITY_LABEL[activeView]
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${open ? '' : ' sidebar-hidden'}`}>
       <div className="sidebar-logo">
-        <h2>The Dance Collective</h2>
-        <span>McKinney</span>
+        <div className="sidebar-logo-text">
+          <h2>The Dance Collective</h2>
+          <span>McKinney</span>
+        </div>
+        <button className="sidebar-toggle" onClick={onToggle} title="Hide sidebar">&#8249;</button>
       </div>
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item) => (

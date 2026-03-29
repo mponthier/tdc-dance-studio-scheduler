@@ -251,9 +251,21 @@ export default function App() {
     }
   }
 
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+
   return (
-    <div className="app-layout">
-      <Sidebar activeView={activeView} onNavigate={setActiveView} onExport={handleExport} onImport={handleImport} />
+    <div className={`app-layout${sidebarOpen ? '' : ' sidebar-collapsed'}`}>
+      <Sidebar
+        activeView={activeView}
+        onNavigate={setActiveView}
+        onExport={handleExport}
+        onImport={handleImport}
+        open={sidebarOpen}
+        onToggle={() => setSidebarOpen((v) => !v)}
+      />
+      {!sidebarOpen && (
+        <button className="sidebar-show-btn" onClick={() => setSidebarOpen(true)} title="Show sidebar">&#8250;</button>
+      )}
       <main className="app-main">{renderPage()}</main>
     </div>
   )
